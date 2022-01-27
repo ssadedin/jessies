@@ -15,6 +15,7 @@ public class TerminatorPreferences extends Preferences {
     public static final String CURSOR_COLOR = "cursorColor";
     public static final String FOREGROUND_COLOR = "foreground";
     public static final String SELECTION_COLOR = "selectionColor";
+    public static final String COPY_MODE_SELECTION_COLOR = "copyModeSelectionColor";
     
     public static final String ALPHA = "alpha";
     public static final String ALWAYS_SHOW_TABS = "alwaysShowTabs";
@@ -106,6 +107,7 @@ public class TerminatorPreferences extends Preferences {
         addPreference("Appearance", CURSOR_COLOR, Color.BLUE, "Cursor");
         addPreference("Appearance", FOREGROUND_COLOR, NEAR_BLACK, "Text foreground");
         addPreference("Appearance", SELECTION_COLOR, LIGHT_BLUE, "Selection background");
+        addPreference("Appearance", COPY_MODE_SELECTION_COLOR, LIGHT_BLUE, "Copy mode selection background");
     }
     
     // Offer various preset color combinations.
@@ -137,6 +139,7 @@ public class TerminatorPreferences extends Preferences {
                 put(FOREGROUND_COLOR, foreground);
                 put(CURSOR_COLOR, cursor);
                 put(SELECTION_COLOR, selection);
+                put(COPY_MODE_SELECTION_COLOR, selection);
             }
         });
         return button;

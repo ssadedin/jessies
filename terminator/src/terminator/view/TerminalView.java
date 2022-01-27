@@ -65,6 +65,9 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
     private static final Color TRUNCATION_COLOR = new Color(250, 150, 150);
     private static final String[] TRUNCATION_WARNING = {"output", "truncated"};
     
+    private String selectionColorSource = TerminatorPreferences.SELECTION_COLOR;
+    private boolean suppressBlink = false;
+    
     public TerminalView() {
         TerminatorPreferences preferences = Terminator.getPreferences();
         // The background is no longer set in optionsDidChange
@@ -915,7 +918,7 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
                     }
 
                     // FIXME: this is likely to want some tuning; in particular, we might need to distinguish between light-on-dark and dark-on-light color schemes.
-                    Color selectionColor = Terminator.getPreferences().getColor(TerminatorPreferences.SELECTION_COLOR);
+                    Color selectionColor = Terminator.getPreferences().getColor(this.selectionColorSource);
                     g.setColor(new Color(selectionColor.getRed(), selectionColor.getGreen(), selectionColor.getBlue(), 128));
 
                     x = insets.left + (start == 0 ? 0 : metrics.stringWidth(paddedLine.substring(0, start)));
@@ -943,7 +946,7 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
             TerminatorPreferences preferences = Terminator.getPreferences();
             
             // If the style is the default (which is almost always is), work out what that means from the preferences.
-            boolean preferBlink = preferences.getBoolean(TerminatorPreferences.BLINK_CURSOR);
+            boolean preferBlink = preferences.getBoolean(TerminatorPreferences.BLINK_CURSOR) && !this.suppressBlink;
             int style = cursorStyle;
             if (style == CURSOR_DEFAULT) {
                 if (preferences.getBoolean(TerminatorPreferences.BLOCK_CURSOR)) {
@@ -1091,4 +1094,21 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
     public boolean getScrollableTracksViewportHeight() {
         return false; // We want a vertical scroll-bar.
     }
+
+	public String getSelectionColorSource() {
+		return selectionColorSource;
+	}
+
+	public void setSelectionColorSource(String selectionColorSource) {
+		this.selectionColorSource = selectionColorSource;
+	}
+
+	public boolean isSuppressBlink() {
+		return suppressBlink;
+	}
+
+	public void setSuppressBlink(boolean suppressBlink) {
+		this.suppressBlink = suppressBlink;
+	}
+    
 }

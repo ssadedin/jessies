@@ -237,7 +237,7 @@ public class SelectionHighlighter implements ClipboardOwner, MouseListener, Mous
         }
     }
     
-    private void clearSelection() {
+    public void clearSelection() {
         initialPoint = null;
         highlightStart = null;
         highlightEnd = null;
@@ -315,7 +315,7 @@ public class SelectionHighlighter implements ClipboardOwner, MouseListener, Mous
         clearSelection();
     }
     
-    private void setHighlight(Location start, Location end) {
+    public void setHighlight(Location start, Location end) {
         TextLine startLine = view.getModel().getDisplayTextLine(start.getLineIndex());
         start = new Location(start.getLineIndex(), startLine.getEffectiveCharStartOffset(start.getCharOffset()));
         if (end.getLineIndex() < view.getModel().getLineCount()) {

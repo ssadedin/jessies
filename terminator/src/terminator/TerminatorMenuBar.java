@@ -64,6 +64,8 @@ public class TerminatorMenuBar extends EMenuBar {
         menu.add(new FindPreviousAction());
         menu.add(new CancelFindAction());
         
+        menu.add(new CopyModeAction());
+
         Terminator.getPreferences().initPreferencesMenuItem(menu);
         
         return menu;
@@ -396,6 +398,19 @@ public class TerminatorMenuBar extends EMenuBar {
         }
     }
     
+    public static class CopyModeAction extends AbstractPaneAction {
+        public CopyModeAction() {
+            super("Copy Mode");
+            putValue(ACCELERATOR_KEY, TerminatorMenuBar.makeKeyStroke("Y"));
+            GnomeStockIcon.configureAction(this);
+        }
+        
+        @Override
+        protected void performPaneAction(JTerminalPane terminalPane) {
+            terminalPane.toggleCopyMode();
+        }
+    }
+
     public static class DetachTabAction extends AbstractTabAction {
         public DetachTabAction() {
             super("Detach Tab");

@@ -29,6 +29,9 @@ public class JTerminalPane extends JPanel {
     private boolean wasCreatedAsNewShell;
     private Dimension currentSizeInChars;
     private MenuItemProvider menuItemProvider;
+    protected boolean copyMode = false;
+    protected boolean visualSelect = false;
+    protected Location preCopyModeCursorPosition = null;
     
     /**
      * Creates a new terminal with the given name, running the given command.
@@ -352,7 +355,14 @@ public class JTerminalPane extends JPanel {
                 event.consume();
                 return;
             }
+            
             String sequence = getEscapeSequenceForKeyCode(event);
+
+            if(JTerminalPane.this.copyMode) {
+				handleCopyModeKeyPress(event);
+				return;
+            }
+
             if (sequence != null) {
                 if (sequence.length() == 1) {
                     char ch = sequence.charAt(0);
@@ -480,6 +490,15 @@ public class JTerminalPane extends JPanel {
         }
         
         public void keyReleased(KeyEvent event) {
+            if(copyMode) {
+            	String sequence = getEscapeSequenceForKeyCode(event);
+            	if (sequence != null && sequence.length() == 1) {
+            		char ch = sequence.charAt(0);
+            		if(ch == Ascii.ESC) {
+            			JTerminalPane.this.toggleCopyMode();
+            		}
+            	}
+            }
         }
         
         // Handle key presses which generate keyTyped events.
@@ -543,14 +562,148 @@ public class JTerminalPane extends JPanel {
                 return;
             }
             
+            if(copyMode) {
+				if(event.getKeyCode() == KeyEvent.VK_ESCAPE) {
+					JTerminalPane.this.toggleCopyMode();
+					return;
+				}
+            }
+            
             String utf8 = getUtf8ForKeyEvent(event);
             if (utf8 != null) {
-                control.sendUtf8String(utf8);
-                view.userIsTyping();
-                scroll();
+				if(JTerminalPane.this.copyMode) {
+					handleCopyModeKeyTyped(event, utf8);
+				}
+				else {
+					control.sendUtf8String(utf8);
+					view.userIsTyping();
+					scroll();
+				}
                 event.consume();
             }
         }
+
+		private void handleCopyModeKeyPress(KeyEvent event) {
+			final TerminalView theView = JTerminalPane.this.view;
+
+			final Location pos = theView.getCursorPosition();
+			Location newPos = null;
+
+			if(event.getKeyCode() == KeyEvent.VK_U && event.isControlDown()) {
+
+				final int topLineIndex = view.getFirstVisibleLine();
+				int newLineIndex = topLineIndex + (int)Math.floor((pos.getLineIndex() - topLineIndex) / 2d);
+				if(newLineIndex<topLineIndex) {
+					newLineIndex = topLineIndex;
+				}
+				newPos = new Location(newLineIndex, Math.min(pos.getCharOffset(), view.getModel().getLineLength(newLineIndex)-1));
+			}
+			else
+			if(event.getKeyCode() == KeyEvent.VK_D && event.isControlDown()) {
+
+				final int bottomLineIndex = view.getLastVisibleLine();
+				int newLineIndex = bottomLineIndex - (int)Math.floor((bottomLineIndex - pos.getLineIndex()) / 2d);
+				if(newLineIndex>bottomLineIndex) {
+					newLineIndex = bottomLineIndex;
+				}
+				newPos = new Location(newLineIndex, Math.min(pos.getCharOffset(), view.getModel().getLineLength(newLineIndex)-1));
+			}
+
+			if(newPos != null) {
+				theView.setCursorPosition(newPos);
+			}
+		}
+
+		private void handleCopyModeKeyTyped(KeyEvent event, String utf8) {
+			final TerminalView theView = JTerminalPane.this.view;
+			final Location pos = theView.getCursorPosition();
+			Location newPos = null;
+			String utf8Lower = utf8.toLowerCase();
+			if(utf8Lower.equals("j")) {
+				final int newLineIndex = pos.getLineIndex()+1;
+				newPos = new Location(newLineIndex, Math.min(pos.getCharOffset(), view.getModel().getLineLength(newLineIndex)-1));
+			}
+			else
+			if(utf8Lower.equals("k")) {
+				final int newLineIndex = pos.getLineIndex()-1;
+				newPos = new Location(newLineIndex, Math.min(pos.getCharOffset(), view.getModel().getLineLength(newLineIndex)-1));
+			}
+			else
+			if(utf8Lower.equals("h")) {
+				newPos = new Location(pos.getLineIndex(), pos.getCharOffset()-1);
+			}
+			else
+			if(utf8Lower.equals("l")) {
+				newPos = new Location(pos.getLineIndex(), pos.getCharOffset()+1);
+			}
+			else
+			if(utf8Lower.equals("0")) {
+				newPos = new Location(pos.getLineIndex(), 0);
+			}
+			else
+			if(utf8Lower.equals("$")) {
+				newPos = new Location(pos.getLineIndex(), view.getModel().getLineLength(pos.getLineIndex())-1);
+			}
+			else
+			if(utf8Lower.equals("y")) {
+				theView.getSelectionHighlighter().copyToSystemClipboard();
+				toggleCopyMode();
+			}
+			if(utf8Lower.equals("p")) {
+				theView.getSelectionHighlighter().copyToSystemClipboard();
+				String contents = theView.getSelectionHighlighter().getTabbedString();
+				toggleCopyMode();
+				System.out.println("JTerminalPane.KeyHandler.handleCopyModeKeyTyped : contents=" + contents);
+
+				control.sendUtf8String(contents);
+			}
+			else
+			if(utf8.equals("v")) {
+				toggleVisualSelect();
+			}
+			
+			if(JTerminalPane.this.visualSelect && newPos != null) {
+				SelectionHighlighter hl = theView.getSelectionHighlighter();
+				if(hl.hasSelection()) {
+					
+					if(hl.getStart().equals(pos)) {
+						System.out.println("JTerminalPane.KeyHandler.handleCopyModeKeyTyped : SelStart");
+						hl.setHighlight(newPos, hl.getEnd());
+						if(newPos.compareTo(hl.getEnd())<0)
+							hl.setHighlight(newPos, hl.getEnd());
+						else
+							hl.setHighlight(hl.getEnd(), newPos);
+					}
+					else
+					if(hl.getEnd().equals(pos)) {
+						System.out.println("JTerminalPane.KeyHandler.handleCopyModeKeyTyped : SelEnd");
+						if(newPos.compareTo(hl.getStart())>0)
+							hl.setHighlight(hl.getStart(), newPos);
+						else
+							hl.setHighlight(newPos, hl.getStart());
+					}
+					else {
+						System.out.println("JTerminalPane.KeyHandler.handleCopyModeKeyTyped : SelBegin");
+						hl.setHighlight(Location.min(hl.getStart(), newPos), Location.max(hl.getEnd(), newPos));
+					}
+
+//					if(hl.getStart().compareTo(newPos)>0) 
+//						hl.setHighlight(newPos, hl.getEnd());
+//					
+//					if(hl.getEnd().compareTo(newPos)<0) {
+//						hl.setHighlight(hl.getStart(), newPos);
+//					}
+//					hl.setHighlight(Location.min(hl.getStart(), newPos), Location.max(hl.getEnd(), newPos));
+				}
+				else {
+					hl.setHighlight(Location.min(pos, newPos), Location.max(pos, newPos));
+				}
+			}
+			
+			if(newPos != null) {
+				theView.setCursorPosition(newPos);
+			}
+		}
         
         // gnome-terminal offers these shifted shortcuts, but nothing for scrolling by a single line.
         private boolean doKeyboardScroll(KeyEvent e) {
@@ -730,6 +883,31 @@ public class JTerminalPane extends JPanel {
 
         return host.confirmClose(processesUsingTty);
     }
+    
+    public void toggleCopyMode() {
+		if(this.copyMode) {
+			// Toggling off ; clear any selection made
+			this.view.getSelectionHighlighter().clearSelection();
+			this.view.setCursorPosition(preCopyModeCursorPosition);
+			this.view.setSelectionColorSource(TerminatorPreferences.SELECTION_COLOR);
+			this.visualSelect = false;
+			this.view.setSuppressBlink(false);
+		}
+		else {
+			// Toggling on: store the original cursor position
+			this.preCopyModeCursorPosition = this.view.getCursorPosition();
+			this.view.setSelectionColorSource(TerminatorPreferences.COPY_MODE_SELECTION_COLOR);
+			this.view.setSuppressBlink(true);
+		}
+		this.copyMode = !this.copyMode;
+    }
+
+	private void toggleVisualSelect() {
+		if(this.visualSelect) {
+			this.view.getSelectionHighlighter().clearSelection();
+		}
+		this.visualSelect = !this.visualSelect;
+	}
 
     /**
      * Closes the terminal pane after checking with the user.
@@ -763,4 +941,5 @@ public class JTerminalPane extends JPanel {
     public FindPanel getFindPanel() {
         return findPanel;
     }
+
 }
