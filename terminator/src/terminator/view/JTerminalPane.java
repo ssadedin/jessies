@@ -4,6 +4,10 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
 import java.util.List;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import javax.swing.*;
 import e.gui.*;
 import e.util.*;
@@ -33,6 +37,8 @@ public class JTerminalPane extends JPanel {
     protected boolean visualSelect = false;
     protected Location preCopyModeCursorPosition = null;
     
+	private static final Pattern WHITE_SPACE = Pattern.compile("\\s+");
+
     /**
      * Creates a new terminal with the given name, running the given command.
      */
@@ -613,7 +619,7 @@ public class JTerminalPane extends JPanel {
 				theView.setCursorPosition(newPos);
 			}
 		}
-
+		
 		private void handleCopyModeKeyTyped(KeyEvent event, String utf8) {
 			final TerminalView theView = JTerminalPane.this.view;
 			final Location pos = theView.getCursorPosition();
@@ -635,6 +641,45 @@ public class JTerminalPane extends JPanel {
 			else
 			if(utf8Lower.equals("l")) {
 				newPos = new Location(pos.getLineIndex(), pos.getCharOffset()+1);
+			}
+			else
+			if(utf8Lower.equals("w") || utf8Lower.equals("e")) {
+				TextLine text = view.getModel().getDisplayTextLine(pos.getLineIndex());
+				String rightText = text.getTabbedString(Math.min(text.length(), pos.getCharOffset()), text.length()-1);
+
+				Matcher matcher = WHITE_SPACE.matcher(rightText);
+				if(matcher.find()) {
+					MatchResult result = matcher.toMatchResult();
+					
+					int offset =  utf8Lower.equals("e") ? result.start() : result.end();
+					if(offset == 0)
+						offset = result.end();
+
+					newPos = new Location(pos.getLineIndex(), pos.getCharOffset() + offset);
+				}
+				else {
+					newPos = new Location(pos.getLineIndex(), text.length());
+				}
+			}
+			else
+			if(utf8Lower.equals("b")) {
+				TextLine text = view.getModel().getDisplayTextLine(pos.getLineIndex());
+				String leftText = text.getTabbedString(0, Math.min(text.length()-1, pos.getCharOffset()));
+				String reverseLeftText = new StringBuilder(leftText).reverse().toString();
+
+				Matcher matcher = WHITE_SPACE.matcher(reverseLeftText);
+				if(matcher.find()) {
+					MatchResult result = matcher.toMatchResult();
+					
+					int offset = result.start();
+					if(offset == 0)
+						offset = result.end();
+					
+					newPos = new Location(pos.getLineIndex(), pos.getCharOffset() - offset);
+				}
+				else {
+					newPos = new Location(pos.getLineIndex(), 0);
+				}
 			}
 			else
 			if(utf8Lower.equals("0")) {
@@ -890,6 +935,7 @@ public class JTerminalPane extends JPanel {
 			this.view.getSelectionHighlighter().clearSelection();
 			this.view.setCursorPosition(preCopyModeCursorPosition);
 			this.view.setSelectionColorSource(TerminatorPreferences.SELECTION_COLOR);
+			this.view.setOverrideCursorColor(null);
 			this.visualSelect = false;
 			this.view.setSuppressBlink(false);
 		}
@@ -897,6 +943,7 @@ public class JTerminalPane extends JPanel {
 			// Toggling on: store the original cursor position
 			this.preCopyModeCursorPosition = this.view.getCursorPosition();
 			this.view.setSelectionColorSource(TerminatorPreferences.COPY_MODE_SELECTION_COLOR);
+			this.view.setOverrideCursorColor(Color.ORANGE.darker());
 			this.view.setSuppressBlink(true);
 		}
 		this.copyMode = !this.copyMode;

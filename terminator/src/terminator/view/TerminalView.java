@@ -66,6 +66,8 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
     private static final String[] TRUNCATION_WARNING = {"output", "truncated"};
     
     private String selectionColorSource = TerminatorPreferences.SELECTION_COLOR;
+    private Color overrideCursorColor = null;
+
     private boolean suppressBlink = false;
     
     public TerminalView() {
@@ -961,7 +963,10 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
             boolean cursorIsVisible = ((style == 2 || style == 4 || style == 6)) || blinkOn;
             if (!cursorIsVisible) return;
             
-            g.setColor(Terminator.getPreferences().getColor(cursorIsVisible ? TerminatorPreferences.CURSOR_COLOR : TerminatorPreferences.BACKGROUND_COLOR));
+            Color cursorColor = Terminator.getPreferences().getColor(cursorIsVisible ? TerminatorPreferences.CURSOR_COLOR : TerminatorPreferences.BACKGROUND_COLOR);
+            if(overrideCursorColor != null)
+            	cursorColor = overrideCursorColor;
+			g.setColor(cursorColor);
             
             if (style == CURSOR_STEADY_BLOCK || style == CURSOR_BLINKING_BLOCK) {
                 // Paint over the character underneath.
@@ -1109,6 +1114,14 @@ public class TerminalView extends JComponent implements FocusListener, Scrollabl
 
 	public void setSuppressBlink(boolean suppressBlink) {
 		this.suppressBlink = suppressBlink;
+	}
+
+	public Color getOverrideCursorColor() {
+		return overrideCursorColor;
+	}
+
+	public void setOverrideCursorColor(Color overrideCursorColor) {
+		this.overrideCursorColor = overrideCursorColor;
 	}
     
 }
