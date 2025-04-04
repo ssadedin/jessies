@@ -88,6 +88,8 @@ public class TerminatorMenuBar extends EMenuBar {
         menu.addSeparator();
         menu.add(new ClearScrollbackAction());
         menu.add(new SwitchBufferAction());
+        menu.add(new IncreaseFontSizeAction());
+        menu.add(new DecreaseFontSizeAction());
         
         return menu;
     }
@@ -633,6 +635,53 @@ public class TerminatorMenuBar extends EMenuBar {
         }
     }
     
+    public static class IncreaseFontSizeAction extends AbstractPaneAction {
+        public IncreaseFontSizeAction() {
+            super("Increase Font Size");
+            putValue(ACCELERATOR_KEY, TerminatorMenuBar.makeKeyStroke("EQUALS"));
+        }
+        
+        @Override
+        protected void performPaneAction(JTerminalPane terminalPane) {
+			TerminatorPreferences preferences = Terminator.getPreferences();
+			Font currentFont = preferences.getFont(TerminatorPreferences.FONT);
+			
+			Font updatedFont = currentFont.deriveFont((float)(currentFont.getSize()+1.0));
+			preferences.put(TerminatorPreferences.FONT, updatedFont);
+			
+            System.err.println("Updated font size from " + currentFont.getSize() + " to " + updatedFont.getSize());
+        }
+
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+    }
+    
+    public static class DecreaseFontSizeAction extends AbstractPaneAction {
+        public DecreaseFontSizeAction() {
+            super("Decrease Font Size");
+            putValue(ACCELERATOR_KEY, TerminatorMenuBar.makeKeyStroke("MINUS"));
+        }
+        
+        @Override
+        protected void performPaneAction(JTerminalPane terminalPane) {
+			TerminatorPreferences preferences = Terminator.getPreferences();
+			Font currentFont = preferences.getFont(TerminatorPreferences.FONT);
+			
+			Font updatedFont = currentFont.deriveFont((float)(Math.max(3.0, currentFont.getSize()-1.0)));
+			preferences.put(TerminatorPreferences.FONT, updatedFont);
+			
+            System.err.println("Updated font size from " + currentFont.getSize() + " to " + updatedFont.getSize());
+        }
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+    }
+
     public static class CycleTabAction extends AbstractTabAction {
         private int delta;
         
