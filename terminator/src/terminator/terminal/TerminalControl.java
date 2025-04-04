@@ -211,6 +211,7 @@ public class TerminalControl {
         if (model != null) {
             model.setStyle(Style.getDefaultStyle());
             model.setCursorVisible(true);
+            model.useAlternateBuffer(false);
         }
     }
     
