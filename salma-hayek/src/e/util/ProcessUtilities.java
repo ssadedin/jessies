@@ -1,7 +1,6 @@
 package e.util;
 
 import java.io.*;
-import java.lang.reflect.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.regex.*;
@@ -237,10 +236,8 @@ public class ProcessUtilities {
      */
     public static int getProcessId(Process process) {
         try {
-            Field pidField = process.getClass().getDeclaredField("pid");
-            pidField.setAccessible(true);
-            return pidField.getInt(process);
-        } catch (Exception ex) {
+            return Math.toIntExact(process.pid());
+        } catch (UnsupportedOperationException | ArithmeticException ex) {
             return -1;
         }
     }
