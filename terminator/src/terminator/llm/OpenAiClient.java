@@ -59,6 +59,10 @@ public final class OpenAiClient {
         public ChatRequest withJsonResponse() {
             return new ChatRequest(model, messages, temperature, maxTokens, Map.of("type", "json_object"), stream);
         }
+
+        public ChatRequest withoutResponseFormat() {
+            return new ChatRequest(model, messages, temperature, maxTokens, null, stream);
+        }
     }
 
     /**

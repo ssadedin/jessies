@@ -111,25 +111,40 @@ public final class LlmSuggestController {
                 EndpointGuard.check(settings.endpoint(), settings.allowNonLocalEndpoint()).ifPresent(problem -> {
                     throw new LlmException(problem);
                 });
-                SuggestionPipeline.PreparedPrompt prompt = SuggestionPipeline.prepare(snapshot, settings, LlmFiles.load());
+                LlmFiles.Loaded files = LlmFiles.load();
+                OpenAiClient client = clientFor(settings);
+
+                // Pass 1, unless a request on the cursor line (or the settings) already decide the scenario.
+                SuggestionPipeline.Choice choice = SuggestionPipeline.chooseWithoutClassifier(snapshot, settings).orElse(null);
+                if (choice == null) {
+                    statusPrefix.set("Working out what would help");
+                    SuggestionPipeline.PreparedPrompt classification = SuggestionPipeline.prepareClassification(snapshot, settings, files);
+                    if (settings.debugLog()) {
+                        LlmDebugLog.append("classification request to " + settings.endpoint() + " model " + settings.classifierModel(), describe(classification));
+                    }
+                    String reply = runToCompletion(client, classification.chatRequest(), requestGeneration);
+                    if (reply == null || generation.get() != requestGeneration) {
+                        return;
+                    }
+                    choice = Classifier.interpret(reply, snapshot, files.templates());
+                    if (settings.debugLog()) {
+                        LlmDebugLog.append("classification response", reply + "\n\nChose " + choice.templateName() + ": " + choice.notes());
+                    }
+                }
+
+                // Pass 2.
+                SuggestionPipeline.PreparedPrompt prompt = SuggestionPipeline.prepare(snapshot, settings, files, choice);
                 if (settings.debugLog()) {
                     LlmDebugLog.append("request to " + settings.endpoint() + " model " + settings.model() + " template " + prompt.templateName(), describe(prompt));
                 }
                 detectedRequest.set(prompt.request());
-                statusPrefix.set(prompt.request().isPresent() ? "Answering" : "Looking for something useful");
-                OpenAiClient.ChatCall call = clientFor(settings).streamChat(prompt.chatRequest(), text -> {
+                statusPrefix.set(SuggestionPipeline.statusFor(choice, files.templates()));
+                OpenAiClient.ChatCall call = client.streamChat(prompt.chatRequest(), text -> {
                     synchronized (pendingText) {
                         pendingText.append(text);
                     }
                 });
-                GuiUtilities.invokeLater(() -> {
-                    if (generation.get() == requestGeneration) {
-                        currentCall = call;
-                    } else {
-                        // Cancelled or superseded while we were preparing.
-                        call.cancel();
-                    }
-                });
+                register(call, requestGeneration);
                 call.result().whenComplete((text, failure) -> {
                     if (settings.debugLog()) {
                         LlmDebugLog.append("response", failure == null ? text : String.valueOf(failure));
@@ -143,6 +158,51 @@ public final class LlmSuggestController {
                 GuiUtilities.invokeLater(() -> finish(requestGeneration, ex, snapshot, Optional.empty()));
             }
         });
+    }
+
+    /**
+     * Makes the call the one Esc cancels, or cancels it straight away if the request has been abandoned meanwhile.
+     */
+    private void register(OpenAiClient.ChatCall call, int requestGeneration) {
+        GuiUtilities.invokeLater(() -> {
+            if (generation.get() == requestGeneration) {
+                currentCall = call;
+            } else {
+                call.cancel();
+            }
+        });
+    }
+
+    /**
+     * Runs a request to completion on the calling (background) thread, returning its text, or null if it was cancelled.
+     * 
+     * @throws LlmException if it failed
+     */
+    private String runToCompletion(OpenAiClient client, OpenAiClient.ChatRequest request, int requestGeneration) {
+        for (int attempt = 1; ; ++attempt) {
+            OpenAiClient.ChatCall call = client.streamChat(request, text -> {});
+            register(call, requestGeneration);
+            try {
+                return call.result().get();
+            } catch (CancellationException ex) {
+                return null;
+            } catch (InterruptedException ex) {
+                call.cancel();
+                Thread.currentThread().interrupt();
+                return null;
+            } catch (ExecutionException ex) {
+                Throwable cause = ex.getCause();
+                if (cause instanceof CancellationException) {
+                    return null;
+                }
+                // Some servers (LM Studio, for one) reject "response_format": {"type": "json_object"}; the prompt asks for JSON anyway.
+                if (attempt == 1 && request.responseFormat() != null && cause instanceof LlmException llmException && llmException.httpStatus().orElse(0) == 400) {
+                    request = request.withoutResponseFormat();
+                    continue;
+                }
+                throw (cause instanceof LlmException llmException) ? llmException : new LlmException("The request to the LLM endpoint failed: " + cause, cause);
+            }
+        }
     }
 
     private void finish(int requestGeneration, Throwable failure, TerminalSnapshot snapshot, Optional<RequestDetector.DetectedRequest> request) {
@@ -286,10 +346,18 @@ public final class LlmSuggestController {
             String details;
             try {
                 Optional<String> endpointProblem = EndpointGuard.check(settings.endpoint(), settings.allowNonLocalEndpoint());
-                SuggestionPipeline.PreparedPrompt prompt = SuggestionPipeline.prepare(snapshot, settings, LlmFiles.load());
+                LlmFiles.Loaded files = LlmFiles.load();
                 details = "Enabled: " + (settings.enabled() ? "yes" : "no (nothing will be sent)") + "\n"
-                        + "Endpoint: " + settings.endpoint() + (endpointProblem.isPresent() ? "\n  BLOCKED: " + endpointProblem.get() : "") + "\n"
-                        + describe(prompt);
+                        + "Endpoint: " + settings.endpoint() + (endpointProblem.isPresent() ? "\n  BLOCKED: " + endpointProblem.get() : "") + "\n";
+                Optional<SuggestionPipeline.Choice> choice = SuggestionPipeline.chooseWithoutClassifier(snapshot, settings);
+                if (choice.isPresent()) {
+                    details += describe(SuggestionPipeline.prepare(snapshot, settings, files, choice.get()));
+                } else {
+                    SuggestionPipeline.Choice example = SuggestionPipeline.Choice.explainBecause("Shown as an example: the classifier's reply decides which scenario is really used.");
+                    details += "No request was found on the cursor line, so this takes two passes: the classifier chooses a scenario, then that scenario's template writes the answer.\n"
+                            + "\n##### PASS 1: CLASSIFICATION #####\n" + describe(SuggestionPipeline.prepareClassification(snapshot, settings, files))
+                            + "\n##### PASS 2, IF THE CLASSIFIER CHOOSES \"explain\" #####\n" + describe(SuggestionPipeline.prepare(snapshot, settings, files, example));
+                }
             } catch (RuntimeException ex) {
                 details = "Couldn't prepare the request: " + ex.getMessage();
             }
