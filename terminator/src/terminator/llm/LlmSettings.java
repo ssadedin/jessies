@@ -63,18 +63,17 @@ public record LlmSettings(
     }
 
     /**
-     * Splits a space-separated marker list, dropping duplicates, longest first so that "--" is tried before "-".
+     * Splits a space-separated marker list, dropping duplicates. The order is kept because it's
+     * the priority order RequestDetector uses.
      */
     static List<String> parseCommentMarkers(String markers) {
         LinkedHashSet<String> unique = new LinkedHashSet<>(Arrays.asList(markers.trim().split("\\s+")));
         unique.remove("");
-        ArrayList<String> result = new ArrayList<>(unique);
-        result.sort(Comparator.comparingInt(String::length).reversed());
-        return List.copyOf(result);
+        return List.copyOf(unique);
     }
 
     @Test private static void testParseCommentMarkers() {
-        Assert.equals(parseCommentMarkers("# -- //"), List.of("--", "//", "#"));
+        Assert.equals(parseCommentMarkers("# -- //"), List.of("#", "--", "//"));
         Assert.equals(parseCommentMarkers("  #   '  #  "), List.of("#", "'"));
         Assert.equals(parseCommentMarkers(""), List.of());
     }
