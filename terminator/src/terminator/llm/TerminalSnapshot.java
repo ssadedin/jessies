@@ -46,6 +46,18 @@ public record TerminalSnapshot(List<String> lines, String cursorLine, int cursor
      */
     static TerminalSnapshot fromLines(List<String> rawLines, String cursorLine, int cursorColumn, boolean alternateBuffer, String title, int width, int characterBudget) {
         List<String> cleaned = collapseBlankLines(dropTrailingBlankLines(stripTrailingWhitespace(rawLines)));
+        return new TerminalSnapshot(keepMostRecent(cleaned, characterBudget), cursorLine, cursorColumn, alternateBuffer, Objects.requireNonNullElse(title, ""), width);
+    }
+    
+    /**
+     * Returns a copy of this snapshot with its lines trimmed to a smaller budget, for when
+     * something else (such as the user's context) needs part of the budget.
+     */
+    public TerminalSnapshot withBudget(int characterBudget) {
+        return new TerminalSnapshot(keepMostRecent(lines, characterBudget), cursorLine, cursorColumn, alternateBuffer, title, width);
+    }
+    
+    private static List<String> keepMostRecent(List<String> cleaned, int characterBudget) {
         ArrayDeque<String> kept = new ArrayDeque<>();
         int remaining = characterBudget;
         for (int i = cleaned.size() - 1; i >= 0 && remaining > 0; --i) {
@@ -61,7 +73,7 @@ public record TerminalSnapshot(List<String> lines, String cursorLine, int cursor
             kept.addFirst(line);
             remaining -= cost;
         }
-        return new TerminalSnapshot(List.copyOf(kept), cursorLine, cursorColumn, alternateBuffer, Objects.requireNonNullElse(title, ""), width);
+        return List.copyOf(kept);
     }
 
     /**
@@ -111,6 +123,12 @@ public record TerminalSnapshot(List<String> lines, String cursorLine, int cursor
         Assert.equals(fromLines(raw, "$ # help", 8, false, "", 80, 22).lines(), List.of("older", "recent", "$ # help"));
     }
 
+    @Test private static void testWithBudget() {
+        TerminalSnapshot snapshot = fromLines(List.of("one", "two", "three"), "three", 5, false, "t", 80, 100);
+        Assert.equals(snapshot.withBudget(10).lines(), List.of("two", "three"));
+        Assert.equals(snapshot.withBudget(10).title(), "t");
+    }
+    
     @Test private static void testBudgetSmallerThanOneLine() {
         TerminalSnapshot snapshot = fromLines(List.of("0123456789"), "", 0, false, "", 80, 5);
         Assert.equals(snapshot.lines(), List.of("6789"));
