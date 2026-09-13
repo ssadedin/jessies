@@ -97,7 +97,7 @@ everything after that runs on a background thread and works on immutable data.
 | File | Change |
 |---|---|
 | `TerminatorMenuBar.java` | New **Edit → LLM** submenu (built with `GuiUtilities.makeMenu`, added after `CopyModeAction` in `makeEditMenu()`), containing `LlmSuggestAction` ("Suggest") and `LlmPreviewRequestAction` ("Preview Request…"), both `extends AbstractPaneAction`. Accelerators are fixed, not built from `defaultKeyStrokeModifiers`: Mac uses `CTRL_DOWN_MASK \| META_DOWN_MASK` + `L`, and everything else uses `CTRL_DOWN_MASK \| SHIFT_DOWN_MASK` + `L`. On Mac, Cmd is present, so `isKeyboardEquivalent` already sends the event to the menu bar and `^L` never reaches the pty. **Test this.** |
-| `JTerminalPane.java` | Create the `LlmSuggestController`. Wrap `scrollPane` in a layered container so the overlay can sit on top of it and moves with the pane when tabs change. **Linux/Windows hotkey:** Ctrl+Shift+L doesn't match `isKeyboardEquivalent` when the default modifier is Alt, so `KeyHandler` would otherwise send `^L` (clear screen) to the pty. In `keyPressed`, recognise the chord, run the action, consume the event, and set a flag so the matching `keyTyped` (`0x0C`) is swallowed too. The terminal can't tell Ctrl+Shift+L from Ctrl+L anyway, so no key the user could use is lost. **Overlay keys:** if the overlay is showing, Esc closes it (and cancels any request) and is consumed; any other key closes it and is then handled as usual. |
+| `JTerminalPane.java` | Create the `LlmSuggestController`. Wrap `scrollPane` in a layered container so the overlay can sit on top of it and moves with the pane when tabs change. **Linux/Windows hotkey:** Ctrl+Shift+L doesn't match `isKeyboardEquivalent` when the default modifier is Alt, so `KeyHandler` would otherwise send `^L` (clear screen) to the pty. *(As built in Phase 2:)* `keyPressed` leaves the chord unconsumed so the menu accelerator runs the action, and `keyTyped` swallows the matching `^L` (`0x0C`). When comparing modifiers, use the `_DOWN_MASK` value itself, not `KeyStroke.getModifiers()`, which also includes the legacy bits; that mistake let `^L` through in the first end-to-end run. The terminal can't tell Ctrl+Shift+L from Ctrl+L anyway, so no key the user could use is lost. **Overlay keys:** if the overlay is showing, Esc closes it (and cancels any request) and is consumed; on Linux the `KEY_TYPED` Esc that follows is swallowed too. Any other key apart from modifiers and menu shortcuts closes it (cancelling the request) and is then handled as usual. |
 | `TerminatorPreferences.java` | New "LLM" preferences group (§6.3). |
 | `terminator/lib/jars/` | Add the JSON library jar (§9.3). Both `universal.make` (`EXTRA_JARS`) and `invoke-java.rb` already pick up `lib/jars/*.jar`. |
 
@@ -301,6 +301,8 @@ name replaces the bundled one.
   redact-patterns.txt        # extra regexes, one per line
   prompts/
     _system.md               # shared system prompt
+    _about-the-user.md       # shared: includes {{user_context}}
+    _terminal.md             # shared: includes {{screen}} in <terminal> tags
     _output-format.md        # shared output convention (§6.2)
     classify.md              # pass 1
     explicit-request.md      # scenario: user typed a comment request
@@ -624,6 +626,28 @@ timeout on the whole request (§9.2), and `error_prone_annotations` is added
   `explicit-request` template; everything else uses `general`.
 - Edit → LLM → Preview Request….
 - **Milestone:** usable day to day, read-only.
+
+*Status (2026-09-13): done* (commits `038b5bc0`..`cb68a209`). 33 unit tests
+pass on JDK 17 and 25. The test that renders the real bundled templates
+checks they have no unknown variables. It was also checked end to end under
+Xvfb on Linux against a fake streaming server:
+- A `#` request streams into the overlay, and the screen isn't cleared.
+- Esc closes the overlay without sending Esc to the shell.
+- Typing cancels the request (the server sees the disconnect) and still
+  reaches the shell.
+- With the server stopped, the overlay shows "Couldn't connect … Is the
+  server running?".
+- The Edit → LLM submenu and Preview Request… work.
+- The debug log is created with permissions 600.
+
+Also added: `SuggestionPipeline` (shared by Suggest and Preview), `LlmFiles`
+(template, context and redaction files re-read on every request so edits
+apply at once), a "Not configured" message when no model is set, and a Copy
+button. The user context shares the character budget, but at least 1000
+characters of terminal are always kept.
+
+**Not yet checked on Mac:** Ctrl+Cmd+L with the screen menu bar, and how the
+overlay looks.
 
 **Phase 3 — Single-line insertion**
 - The `COMMAND:` convention, `SuggestionPresenter`, `SuggestionInserter`
