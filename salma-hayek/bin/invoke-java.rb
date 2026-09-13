@@ -188,63 +188,47 @@ class Java
     return java_version
   end
 
-  def check_java_version()
-    java_version_string = get_java_version(@launcher)
+  def required_java_version()
+    header = IO.read("#{@salma_hayek}/native/Headers/JAVA_MAJOR_VERSION.h")
+    return header.match(/#define JAVA_MAJOR_VERSION (\d+)/)[1].to_i()
+  end
+  
+  def parse_java_major_version(java_version_string)
+    # Handles both "1.8.0_292" and "17.0.2" styles.
     if java_version_string.sub(/^1\./, "").match(/^(\d+)/)
-      @java_version = $1.to_i()
+      return $1.to_i()
     end
-    
-    if @java_version >= 6
+    return 0
+  end
+  
+  def check_java_version()
+    required_version = required_java_version()
+    java_version_string = get_java_version(@launcher)
+    @java_version = parse_java_major_version(java_version_string)
+    if @java_version >= required_version
       return
     end
     
     # The "java" on the path was no good.
-    # Can we salvage the situation by finding a suitable JVM?
-    
+    # On Mac OS, java_home(1) can find a suitable JDK even if it isn't the default.
     if target_os() == "Darwin"
-      globs = [ "/System/Library/Frameworks/JavaVM.framework/Versions/1.6/Home" ]
-    else
-      # This works for Linux distributions using Sun's RPM, and for Solaris.
-      globs = [  "/usr/java/jdk1.7.0*", "/usr/java/jre1.7.0*", "/usr/java/jdk1.6.0*", "/usr/java/jre1.6.0*" ]
-    end
-    globs.each() {
-      |glob|
-      java_directories = Dir.glob(glob).sort().reverse()
-      java_directories.each() {
-        |java_directory|
-        bin_java = File.join(java_directory, "bin", "java")
-        if File.exist?(bin_java)
-          @launcher = bin_java
-          return
-        end
-      }
-    }
-    
-    # This works for Linux distributions using the Debian package for Sun's JVM where the user hasn't run update-java-alternatives(1).
-    # (If they have configured Sun's JVM as their default, we won't have had to grovel about for a suitable JVM.)
-    sun_java = "/usr/lib/jvm/java-6-sun/bin/java"
-    if File.exist?(sun_java)
-      @launcher = sun_java
-      return
+      java_home = `/usr/libexec/java_home -v #{required_version}+ 2>/dev/null`.chomp()
+      bin_java = File.join(java_home, "bin", "java")
+      if java_home != "" && File.exist?(bin_java)
+        @launcher = bin_java
+        @java_version = parse_java_major_version(get_java_version(@launcher))
+        return
+      end
     end
     
     # We didn't find a suitable JVM, so we'll just have to tell the user.
     message_lines = []
     launcher_path = `which #{@launcher}`.chomp()
-    # http://www.java.com/en/download/ looks like a better choice if we want to keep it simple.
-    # The suggestion below offers a variety of downloads of JDKs and Java EE stuff which would
-    # be bewildering to the uninitiated.
-    suggestion = "http://java.sun.com/javase/downloads/ may link to a suitable JRE, if you can't use one provided by your OS vendor"
     if launcher_path != ""
-      message_lines << "Your #{launcher_path} claims to be #{actual_java_version}."
-      suggestion = "Please upgrade."
+      message_lines << "Your #{launcher_path} claims to be #{java_version_string}."
     end
-    if File.exist?("/usr/bin/gnome-app-install")
-      # FIXME: it's now just "Ubuntu Software Center" on the main menu for Ubuntu users.
-      suggestion = 'To install a suitable JRE, choose "Add/Remove..." from the GNOME "Applications" menu, show "All available applications", type "sun java" in the search field, and install "Sun Java 6 Runtime".'
-    end
-    message_lines << suggestion
-    show_alert("#{@app_name} requires Java 6 or newer.", message_lines.join("\n\n"))
+    message_lines << "Please install JDK #{required_version} or newer, and make sure it is first on your PATH (or, on Mac OS, the default reported by /usr/libexec/java_home)."
+    show_alert("#{@app_name} requires Java #{required_version} or newer.", message_lines.join("\n\n"))
     exit(1)
   end
 
@@ -352,8 +336,13 @@ class Java
     # check_java_version may alter @launcher to get us something that works.
     args = [ @launcher ]
     
-    if @java_version >= 9
-      args << "--illegal-access=debug"
+    # Since Java 17, reflective access to JDK internals must be granted explicitly.
+    # Keep this list short: prefer public API where one exists.
+    # e.util.TimerUtilities lists queued Swing timers for the debug menu.
+    args << "--add-opens=java.desktop/javax.swing=ALL-UNNAMED"
+    if target_os() == "Linux"
+      # e.util.GuiUtilities.fixWmClass sets the X11 WM_CLASS.
+      args << "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
     end
     
     add_pathnames_property("java.class.path", @class_path)
