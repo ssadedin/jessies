@@ -511,6 +511,26 @@ Each phase ends in a working, committable state.
 - **Decision point:** stay on 17, or set the header to 11. Record the result
   in this document.
 
+*Status (2026-09-13):* steps 1–5 are done (commits `1d309d82`..`58a82a1d`).
+Verified on **Linux aarch64 only** (Ubuntu 26.04, in a container):
+- `salma-hayek`, `terminator` and `evergreen` build cleanly with JDK 17 and
+  JDK 25, producing class file version 61.
+- All 24 salma-hayek unit tests pass on 17 and 25, including a new test for
+  `HorizontalScrollWheelListener`. `make test` in `terminator` still
+  reports "No tests found!", as it did before these changes.
+- Launched under Xvfb on JDK 17: the window opens, the shell runs in the
+  pty, typed input reaches it, both `--add-opens` flags are on the JVM
+  command line, the window can be found by X11 class `Terminator` (so
+  `fixWmClass` works), and there are no reflection warnings or exceptions in
+  the log.
+- The launcher refuses a (fake) Java 11 `java` with "requires Java 17 or
+  newer".
+
+**Still to do before the decision point:** the full smoke test on **Mac**
+(build via `java_home -v 17+`, screen menu bar, Dock, Cmd shortcuts, copy
+mode, font size, preferences, horizontal scrolling) and interactive Linux
+checks that Xvfb can't cover (IME, dead keys, resize).
+
 **Phase 0b — Groundwork**
 - Add the Gson jar; confirm `make` and `make test` pass and the app starts.
 - Check packaging includes `lib/jars`.
