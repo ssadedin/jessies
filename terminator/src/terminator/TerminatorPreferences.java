@@ -60,6 +60,24 @@ public class TerminatorPreferences extends Preferences {
      */
     public static final String ENABLE_TERMINAL_CLIPBOARD_ACCESS = "enableTerminalClipboardAccess";
     
+    /**
+     * LLM suggestions (see terminator/doc/llm-suggestions-plan.md and terminator.llm.LlmSettings).
+     * Nothing is ever sent unless the user asks, and then only if LLM_ENABLED is true.
+     */
+    public static final String LLM_ENABLED = "llmEnabled";
+    public static final String LLM_ENDPOINT = "llmEndpoint";
+    public static final String LLM_MODEL = "llmModel";
+    public static final String LLM_CLASSIFIER_MODEL = "llmClassifierModel";
+    public static final String LLM_API_KEY_ENV_VAR = "llmApiKeyEnvVar";
+    public static final String LLM_CONTEXT_CHARS = "llmContextChars";
+    public static final String LLM_SKIP_CLASSIFICATION = "llmSkipClassification";
+    public static final String LLM_ALLOW_NON_LOCAL_ENDPOINT = "llmAllowNonLocalEndpoint";
+    public static final String LLM_REDACT_SECRETS = "llmRedactSecrets";
+    public static final String LLM_COMMENT_MARKERS = "llmCommentMarkers";
+    public static final String LLM_TIMEOUT_SECONDS = "llmTimeoutSeconds";
+    public static final String LLM_OVERLAY_FONT_PERCENT = "llmOverlayFontPercent";
+    public static final String LLM_DEBUG_LOG = "llmDebugLog";
+    
     private static final Color CREAM = new Color(0xfefaea);
     private static final Color LIGHT_BLUE = new Color(0xb3d4ff);
     private static final Color NEAR_BLACK = new Color(0x181818);
@@ -81,6 +99,8 @@ public class TerminatorPreferences extends Preferences {
         addTab("Behavior");
         addTab("Appearance");
         addTab("Presets");
+        // willAddRows relies on "Presets" being the third tab, so new tabs go after it.
+        addTab("LLM");
         
         addPreference("Behavior", INITIAL_COLUMN_COUNT, Integer.valueOf(80), "New terminal width");
         addPreference("Behavior", INITIAL_ROW_COUNT, Integer.valueOf(24), "New terminal height");
@@ -108,6 +128,20 @@ public class TerminatorPreferences extends Preferences {
         addPreference("Appearance", FOREGROUND_COLOR, NEAR_BLACK, "Text foreground");
         addPreference("Appearance", SELECTION_COLOR, LIGHT_BLUE, "Selection background");
         addPreference("Appearance", COPY_MODE_SELECTION_COLOR, LIGHT_BLUE, "Copy mode selection background");
+        
+        addPreference("LLM", LLM_ENABLED, Boolean.FALSE, "Enable LLM suggestions");
+        addPreference("LLM", LLM_ENDPOINT, "http://localhost:11434/v1", "OpenAI-compatible endpoint");
+        addPreference("LLM", LLM_MODEL, "", "Model");
+        addPreference("LLM", LLM_CLASSIFIER_MODEL, "", "Classifier model (blank for same)");
+        addPreference("LLM", LLM_API_KEY_ENV_VAR, "TERMINATOR_LLM_API_KEY", "API key environment variable");
+        addPreference("LLM", LLM_CONTEXT_CHARS, Integer.valueOf(8000), "Context budget (characters)");
+        addPreference("LLM", LLM_SKIP_CLASSIFICATION, Boolean.FALSE, "Skip classification pass (faster, less accurate)");
+        addPreference("LLM", LLM_ALLOW_NON_LOCAL_ENDPOINT, Boolean.FALSE, "Allow endpoints outside local and private networks");
+        addPreference("LLM", LLM_REDACT_SECRETS, Boolean.TRUE, "Redact likely secrets before sending");
+        addPreference("LLM", LLM_COMMENT_MARKERS, "# -- //", "Comment markers (space-separated)");
+        addPreference("LLM", LLM_TIMEOUT_SECONDS, Integer.valueOf(120), "Request timeout (seconds)");
+        addPreference("LLM", LLM_OVERLAY_FONT_PERCENT, Integer.valueOf(85), "Suggestion font size (% of terminal font)");
+        addPreference("LLM", LLM_DEBUG_LOG, Boolean.FALSE, "Log LLM requests and responses (debugging)");
     }
     
     // Offer various preset color combinations.
