@@ -1,3 +1,3 @@
 #pragma once
 
-#define JAVA_MAJOR_VERSION 8
+#define JAVA_MAJOR_VERSION 17
