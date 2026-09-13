@@ -721,10 +721,29 @@ against a fake classifier and answer server:
 **Phase 5 — Polish and docs**
 - User-context file, first-run creation of `~/.terminator/llm/` containing
   commented example files.
-- Short user docs (setup with Ollama and llama.cpp, the zsh
-  `interactivecomments` note, writing templates, redaction).
+- Short user docs (setup with Ollama and llama.cpp, writing templates,
+  redaction). The zsh `interactivecomments` note is no longer needed, because
+  nothing is inserted with a `#` prefix.
 - Tune the default prompts against 2–3 common local models (such as Qwen
   and Llama variants) using a set of saved screen snapshots.
+
+*Status (2026-09-13): done except the tuning runs* (commits `b24bb76a`..`511bc552`):
+- **Starter files:** the first suggestion, or the new Edit > LLM > Show LLM
+  Files, creates `~/.terminator/llm/` containing a commented `context.md`,
+  `redact-patterns.txt` and `prompts/README.txt`. `<!-- -->` comments in
+  `context.md` aren't sent. An existing directory is left alone. Checked
+  under Xvfb, including the fallback dialog showing the path when no file
+  manager is available.
+- **User guide:** `doc/llm-suggestions.md`, linked from the README.
+- **Tuning harness:** `PromptEval` plus 12 fixtures in `tests/llm-eval/`
+  (failed git push, missing Python module, permission denied, a Java stack
+  trace in less, an nginx upstream error, a diff, Python in vim, `df`
+  output, `#` and `--` requests, and requests in `'` and plain words). It
+  was checked end to end against the fake server. **The tuning runs
+  themselves weren't possible here**, because model downloads are blocked
+  in the build environment. Run `PromptEval` on a machine with Ollama and
+  adjust the templates from its report.
+- 72 unit tests pass.
 
 ## 11. Future work
 
