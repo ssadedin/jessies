@@ -21,6 +21,7 @@ public final class SuggestionOverlay extends JPanel {
     private final JScrollPane bodyScrollPane = new JScrollPane(body);
     private final JButton copyButton = new JButton("Copy");
     private final JLabel hint = new JLabel("Esc to close");
+    private String copyText = "";
     private Color background = Color.WHITE;
     private Color borderColor = Color.GRAY;
 
@@ -41,7 +42,7 @@ public final class SuggestionOverlay extends JPanel {
         bodyScrollPane.setBorder(null);
         bodyScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        copyButton.addActionListener(event -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(body.getText()), null));
+        copyButton.addActionListener(event -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(copyText), null));
         copyButton.setEnabled(false);
 
         JPanel footer = new JPanel(new BorderLayout());
@@ -64,6 +65,7 @@ public final class SuggestionOverlay extends JPanel {
     public void start(String statusText, Font terminalFont, int fontPercent) {
         applyStyle(terminalFont, fontPercent);
         body.setText("");
+        copyText = "";
         body.setForeground(foreground());
         copyButton.setEnabled(false);
         setStatus(statusText);
@@ -78,7 +80,8 @@ public final class SuggestionOverlay extends JPanel {
     public void appendText(String text) {
         boolean wasAtBottom = isScrolledToBottom();
         body.append(text);
-        copyButton.setEnabled(!body.getText().isBlank());
+        copyText = body.getText();
+        copyButton.setEnabled(!copyText.isBlank());
         relayout();
         if (wasAtBottom) {
             // Follow the text as it streams in, unless the user has scrolled up to read.
@@ -90,10 +93,22 @@ public final class SuggestionOverlay extends JPanel {
         return body.getText();
     }
 
+    /**
+     * Replaces the streamed text with the finished reply, so a command is shown, and copied, without its "COMMAND:" label.
+     */
+    public void showReply(String statusText, SuggestionReply reply) {
+        setStatus(statusText);
+        body.setText(reply.displayText());
+        copyText = reply.copyText();
+        copyButton.setEnabled(!copyText.isBlank());
+        relayout();
+    }
+
     public void showError(String statusText, String message) {
         setStatus(statusText);
         body.setForeground(errorColor());
         body.setText(message);
+        copyText = message;
         copyButton.setEnabled(true);
         setVisible(true);
         relayout();

@@ -155,7 +155,8 @@ public final class LlmSuggestController {
         } else if (overlay.getText().isBlank()) {
             overlay.showError("No suggestion", "The model returned an empty reply.");
         } else {
-            overlay.setStatus("Suggestion");
+            SuggestionReply reply = SuggestionReply.parse(overlay.getText());
+            overlay.showReply(reply.command().isPresent() ? "Suggested command" : "Suggestion", reply);
         }
     }
 
