@@ -524,42 +524,11 @@ JAVAC_FLAGS.javac += -Xlint:all -Xlint:-serial
 
 JAVA_MAJOR_VERSION := $(shell ruby -e 'require "$(JDK_ROOT_SCRIPT)"; puts(JAVA_MAJOR_VERSION)')
 
-# We should also ensure that we build class files that can be used on the current Java release, regardless of where we build.
-JAVAC_FLAGS.javac += -target $(JAVA_MAJOR_VERSION)
-
-# Ensure we give a clear error if the user attempts to use anything older.
-JAVAC_FLAGS.javac += -source $(JAVA_MAJOR_VERSION)
-
-# Multi-arch from Wheezy and up
-BOOT_JDK_ALTERNATIVES += /usr/lib/jvm/java-$(JAVA_MAJOR_VERSION)-openjdk-amd64
-# Squeeze and before
-BOOT_JDK_ALTERNATIVES += /usr/lib/jvm/java-$(JAVA_MAJOR_VERSION)-openjdk
-BOOT_JDK_ALTERNATIVES += /var/chroot/ia32/usr/lib/jvm/java-$(JAVA_MAJOR_VERSION)-openjdk
-# := deferred to ALTERNATE_BOOTCLASSPATH
-BOOT_JDK.Linux ?= $(firstword $(wildcard $(BOOT_JDK_ALTERNATIVES)))
-
-# FreeBSD
-BOOT_JDK.FreeBSD = /usr/local/openjdk${JAVA_MAJOR_VERSION}
-
-# := deferred to ALTERNATE_BOOTCLASSPATH
-BOOT_JDK.Cygwin = $(call findMakeFriendlyEquivalentName,$(shell ruby -e 'require "$(JDK_ROOT_SCRIPT)"; puts(findBootJdkFromRegistry())'))
-
-BOOT_JDK = $(BOOT_JDK.$(TARGET_OS))
-ALTERNATE_BOOTCLASSPATH ?= $(BOOT_JDK)/jre/lib/rt.jar
-ALTERNATE_BOOTCLASSPATH := $(wildcard $(ALTERNATE_BOOTCLASSPATH))
-BOOT_JDK_MESSAGE += $(NEWLINE) $(NEWLINE)
-BOOT_JDK_MESSAGE += No JDK $(JAVA_MAJOR_VERSION) rt.jar found!
-BOOT_JDK_MESSAGE += $(NEWLINE) $(NEWLINE)
-BOOT_JDK_MESSAGE += We'll build with -source to ensure language compatibility,
-BOOT_JDK_MESSAGE += $(NEWLINE)
-BOOT_JDK_MESSAGE += but without rt.jar this build can't guarantee API compatibility.
-BOOT_JDK_MESSAGE += $(NEWLINE) $(NEWLINE)
-BOOT_JDK_MESSAGE += Be careful!
-BOOT_JDK_MESSAGE += $(NEWLINE)
-# The *** does battle with filter-build-output.rb.
-BOOT_JDK_WARNING = $(warning *** $(BOOT_JDK_MESSAGE))
-BOOT_JDK_DIAGNOSTIC = $(if $(filter 8,$(JAVA_MAJOR_VERSION)),$(BOOT_JDK_WARNING))
-JAVAC_FLAGS.javac += $(if $(ALTERNATE_BOOTCLASSPATH),-bootclasspath $(ALTERNATE_BOOTCLASSPATH),$(BOOT_JDK_DIAGNOSTIC))
+# --release checks both the language level and API usage against the target release,
+# so class files built with a newer JDK still run on JAVA_MAJOR_VERSION, and it gives a
+# clear error if the compiler is older than that.
+# It replaces the -source/-target/-bootclasspath rt.jar dance needed for Java 8 and earlier.
+JAVAC_FLAGS.javac += --release $(JAVA_MAJOR_VERSION)
 
 # ----------------------------------------------------------------------------
 # Set ecj flags.
@@ -574,11 +543,8 @@ JAVAC_FLAGS.ecj += -Xemacs
 JAVAC_FLAGS.ecj += -deprecation
 JAVAC_FLAGS.ecj += -warn:-serial
 
-# We should also ensure that we build class files that can be used on the current Java release, regardless of where we build.
-JAVAC_FLAGS.ecj += -target $(JAVA_MAJOR_VERSION)
-
-# Ensure we give a clear error if the user attempts to use anything older.
-JAVAC_FLAGS.ecj += -source $(JAVA_MAJOR_VERSION)
+# See the corresponding javac flag above.
+JAVAC_FLAGS.ecj += --release $(JAVA_MAJOR_VERSION)
 
 # ----------------------------------------------------------------------------
 

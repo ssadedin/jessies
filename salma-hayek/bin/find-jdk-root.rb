@@ -135,13 +135,6 @@ else
 
   JAVA_MAJOR_VERSION = IO.read("#{salma_hayek}/native/Headers/JAVA_MAJOR_VERSION.h").match(/#define JAVA_MAJOR_VERSION (.+)/)[1].to_i()
   
-  def findBootJdkFromRegistry()
-    return findJdkFromRegistry() {
-      |version|
-      version == JAVA_MAJOR_VERSION
-    }
-  end
-  
   def find_jdk_root()
     require "pathname.rb"
     
