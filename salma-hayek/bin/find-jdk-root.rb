@@ -135,6 +135,16 @@ else
 
   JAVA_MAJOR_VERSION = IO.read("#{salma_hayek}/native/Headers/JAVA_MAJOR_VERSION.h").match(/#define JAVA_MAJOR_VERSION (.+)/)[1].to_i()
   
+  # Returns the major version of the JDK installed at jdk_root, or 0 if it can't be determined.
+  # JDK 9 and later have a "release" file containing a line like JAVA_VERSION="17.0.2".
+  def jdk_major_version(jdk_root)
+    release_file = File.join(jdk_root, "release")
+    if File.exist?(release_file) && IO.read(release_file).match(/^JAVA_VERSION="(?:1\.)?(\d+)/)
+      return $1.to_i()
+    end
+    return 0
+  end
+  
   def find_jdk_root()
     require "pathname.rb"
     
@@ -150,8 +160,19 @@ else
     end
 
     if target_os() == "Darwin"
-      # Ask for a JDK new enough to build with, rather than whatever java_home(1) considers the default.
-      return `/usr/libexec/java_home -v #{JAVA_MAJOR_VERSION}+`.chomp()
+      # JAVA_HOME is the usual way to choose a JDK that java_home(1) doesn't know about,
+      # such as one installed by Homebrew or SDKMAN!.
+      java_home_env = ENV["JAVA_HOME"]
+      if java_home_env != nil && jdk_major_version(java_home_env) >= JAVA_MAJOR_VERSION
+        return java_home_env
+      end
+      # java_home(1) only knows about JDKs in /Library/Java/JavaVirtualMachines.
+      jdk_root = `/usr/libexec/java_home -v #{JAVA_MAJOR_VERSION}+ 2>/dev/null`.chomp()
+      if $?.success?() && jdk_root != ""
+        return jdk_root
+      end
+      $stderr.puts("find-jdk-root.rb: couldn't find JDK #{JAVA_MAJOR_VERSION} or newer: JAVA_HOME is #{java_home_env.inspect} (version #{java_home_env ? jdk_major_version(java_home_env) : "n/a"}) and '/usr/libexec/java_home -v #{JAVA_MAJOR_VERSION}+' found nothing. Set JAVA_HOME to a JDK #{JAVA_MAJOR_VERSION}+ installation.")
+      return nil
     end
 
     # On FreeBSD, the 'javac' family binaries are actually symlinks in /usr/local/bin/,
