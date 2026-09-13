@@ -105,9 +105,10 @@ everything after that runs on a background thread and works on immutable data.
 
 - **Source:** `TerminalModel.getTextLine(i).getString()` for
   `i ∈ [max(0, lineCount − N), lineCount)`, walking backwards from the last
-  line until the **character budget** (default 8000) is used up. The whole
-  visible screen always goes in first; scrollback fills whatever budget is
-  left.
+  line until the **character budget** (default 8000) is used up. The budget
+  is a hard limit. The most recent lines, which are the visible screen, are
+  kept first and scrollback fills whatever is left; if the screen alone is
+  over budget, its oldest lines are dropped.
 - **Clean-up:** strip trailing whitespace from each line, drop trailing blank
   lines, and collapse runs of more than two blank lines.
 - **Alternate screen** (vim, less, top): send that screen only, with no
@@ -124,9 +125,9 @@ everything after that runs on a background thread and works on immutable data.
 ### 5.1 Comment markers
 
 Detection runs locally, with no LLM involved. It uses the markers `#`, `--`
-and `//` by default, matched longest first. The list is a preference, and `'`
-can be added to it but is **off by default** because shell quoting makes false
-matches too likely.
+and `//` by default. The list is a preference and is in **priority order**
+(see §5.2). `'` can be added to it but is **off by default** because shell
+quoting makes false matches too likely.
 
 Markers that aren't on the list, including `'` and anything else such as
 `%`, `;` or `REM`, are still handled: the request goes through the two-pass
@@ -136,8 +137,7 @@ fast path that skips pass 1.
 ### 5.2 Detection on the cursor line
 
 The request must be on the **cursor line**, which is not necessarily the last
-line on screen. Scan the cursor line left to right and pick the **first**
-marker occurrence that:
+line on screen. A marker occurrence qualifies if it:
 
 1. is at the start of the line or follows whitespace. This skips root
    prompts like `root@h:~#` and URLs like `http://`;
@@ -145,6 +145,13 @@ marker occurrence that:
    so a stray quote in `echo 'foo` doesn't match; for other markers the space
    is optional but preferred;
 3. has the cursor at or after the end of the request text.
+
+At each position only the longest matching marker is considered, so `--`
+isn't read as `-`. Among qualifying occurrences, the **first occurrence of
+the highest-priority marker** wins, not the first on the line. So in
+`$ git checkout -- file # restore it`, the `#` comment beats the command's
+own `--`. *(Changed in Phase 1: the original "first occurrence on the line"
+rule got this example wrong.)*
 
 Test cases (unit tests with the project's existing `@Test` / `TestRunner`
 tooling):
@@ -313,6 +320,7 @@ description: The most recent command in the shell failed or printed an error.
 {{> _system}}
 ## About the user
 {{user_context}}
+---8<---
 ## Terminal ({{screen_kind}}, title: {{title}})
 {{screen}}
 ## Task
@@ -321,9 +329,11 @@ Explain the most likely cause and give the fix.
 {{> _output-format}}
 ```
 
-The `_system`, `## About the user` and similar blocks go in the
-`system` message, and the screen and task go in the `user` message. The
-split marker is `---8<---`.
+Everything before the `---8<---` line goes in the `system` message, and
+everything after it in the `user` message. A template without the marker is
+all `user` message. Partials are expanded before variables; variable values
+are inserted as-is and never scanned again, so terminal text containing `{{`
+can't inject placeholders.
 
 **Variables:** `{{screen}}`, `{{cursor_line}}`, `{{screen_kind}}`, `{{title}}`, `{{os}}`,
 `{{request}}` (explicit or inferred), `{{comment_marker}}`,
@@ -350,12 +360,22 @@ budget before the screen does.
   between our lookup and the connection. That's acceptable when the threat
   is accidentally sending data to a cloud endpoint; the point of the guard is
   to stop configuration mistakes, not a hostile local DNS server.
+- **No proxy for local endpoints.** Unless `llmAllowNonLocalEndpoint` is on,
+  the HTTP client is built with `NO_PROXY`. Otherwise a system or corporate
+  proxy could carry a "local" request off the machine, since the proxy
+  rather than our code makes the actual connection. *(Added in Phase 1.)*
 - **Redaction** (on by default) applies to the screen text before any
   pass. Built-in patterns:
   - `-----BEGIN … PRIVATE KEY-----` … `END` blocks
-  - AWS access key IDs `A(KIA|SIA)[0-9A-Z]{16}`, and `aws_secret_access_key\s*[=:]\s*\S+`
-  - `(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|client[_-]?secret)\b\s*[=:]\s*\S+`
-  - `(?i)authorization:\s*\S+(\s+\S+)?`, `(?i)bearer\s+[A-Za-z0-9._~+/-]+=*`
+  - AWS access key IDs `A(KIA|SIA)[0-9A-Z]{16}`
+  - any `key = value` or `key: value` whose key *contains* password, passwd,
+    secret, token or api key (so `DB_PASSWORD=…`, `GITHUB_TOKEN=…`,
+    `aws_secret_access_key = …` and JSON `"password": "…"` all match), with
+    quoted values handled; also `pwd=…`. Only the value is replaced. This is
+    deliberately broad (`max_tokens=100` gets redacted too). *(Broadened in
+    Phase 1: `\bpassword\b` missed `DB_PASSWORD`, because `_` counts as a
+    word character.)*
+  - `Authorization: …` headers and `Bearer …` tokens
   - GitHub `gh[pousr]_[A-Za-z0-9]{36,}`, OpenAI-style `sk-[A-Za-z0-9_-]{20,}`, Slack `xox[abprs]-[A-Za-z0-9-]+`
   - JWTs `eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+`
   - URL credentials `://[^/\s:@]+:[^/\s@]+@`
@@ -472,8 +492,9 @@ If we do fall back, the only thing lost from §9.2 is a cancellation detail.
 
 ### 9.2 HTTP: `java.net.http.HttpClient`
 
-- `HttpClient.newBuilder().followRedirects(NEVER).connectTimeout(…)`, one
-  shared instance.
+- `HttpClient.newBuilder().version(HTTP_1_1).followRedirects(NEVER).connectTimeout(…)`,
+  with `NO_PROXY` for local endpoints (§7). HTTP/1.1 avoids `h2c` upgrade
+  attempts that some local servers handle badly.
 - Streaming: `sendAsync(request, BodyHandlers.ofLines())`, then parse
   `data: …` lines and stop at `data: [DONE]`.
 - Cancelling: `CompletableFuture.cancel(true)` on the future, which closes
@@ -482,14 +503,25 @@ If we do fall back, the only thing lost from §9.2 is a cancellation detail.
   the underlying exchange; closing the stream still stops us reading.)
 - API key: add `Authorization: Bearer …` only when the environment variable
   is set.
+- Timeout: `HttpRequest.timeout` only covers waiting for the response headers,
+  so a separate deadline covers the whole request, including a stalled
+  stream. When it expires the request fails with an `LlmException` and the
+  connection is released.
+- Errors (HTTP status with OpenAI- or Ollama-style error bodies, connection
+  refused, timeouts, error events in the stream) all become an `LlmException`
+  with a message the user can act on.
 
 ### 9.3 JSON: Gson
 
-Gson (Apache-2.0) is a single jar of about 290KB with no dependencies. It
+Gson (Apache-2.0) is a single jar of about 310KB. It
 goes in `terminator/lib/jars/gson-<latest>.jar` and is only used in
 `terminator.llm`, with records for the message and response types.
 **Check** that `package-for-distribution.rb` includes `lib/jars` in the
 Mac, Debian and MSI packages. If not, fix the packaging in this branch.
+
+Gson's annotations refer to Error Prone's, so `error_prone_annotations`
+(about 20KB) is in `lib/jars` too. It's only needed at compile time; without
+it, `javac -Xlint:all` warns wherever `JsonParser` is used.
 
 ### 9.4 Threading
 
@@ -561,6 +593,28 @@ with a clear message.
   stream fixtures).
 - A manual smoke test against a local Ollama or llama.cpp server via a small
   `main()`.
+
+*Status (2026-09-13): done* (commits `ef684ef3`..`ce27bb96`). 28 unit tests
+pass consistently on JDK 17 and JDK 25:
+- `TerminalSnapshot`, `RequestDetector` (the §5.2 table, edge cases and
+  verification of classifier-reported requests), `Redactor`, `EndpointGuard`
+  and `PromptTemplates` (including loading from temporary directories).
+- `ChatStreamParser`: recorded Ollama- and llama.cpp-style streams, JSON
+  replies from servers that don't stream, and error bodies.
+- `OpenAiClient`, end to end against a local fake server: streaming, the
+  Authorization header, HTTP errors, connection refused, cancelling
+  mid-stream (the reader thread is freed straight away), and the
+  whole-request timeout.
+
+**Not done here:** the smoke test against a real model, because there's no
+LLM server in the build environment. To try it by hand:
+`java -cp terminator/.generated/classes:salma-hayek/.generated/classes:terminator/lib/jars/gson-2.14.0.jar terminator.llm.OpenAiClient http://localhost:11434/v1 <model> "Say hello"`.
+
+Design changes made during this phase (all reflected above): markers have a
+priority order (§5.2), the context budget is a hard limit (§4), the secret
+key/value pattern is broader (§7), local endpoints use no proxy (§7), there's a
+timeout on the whole request (§9.2), and `error_prone_annotations` is added
+(§9.3).
 
 **Phase 2 — Hotkey to overlay, single pass**
 - The Edit → LLM submenu; `LlmSuggestAction` and its accelerators, including swallowing `^L` for
