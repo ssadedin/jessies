@@ -13,6 +13,7 @@ import e.gui.*;
 import e.util.*;
 import org.jessies.os.*;
 import terminator.*;
+import terminator.llm.*;
 import terminator.model.*;
 import terminator.terminal.*;
 import terminator.view.highlight.*;
@@ -21,7 +22,7 @@ public class JTerminalPane extends JPanel {
     // The probably over-simplified belief here is that Unix terminals always send ^?.
     // Search the change log for "backspace" for more information.
     private static final String ERASE_STRING = String.valueOf(Ascii.DEL);
-    
+
     private TerminalPaneHost host;
     private TerminalControl control;
     private TerminalView view;
@@ -29,6 +30,7 @@ public class JTerminalPane extends JPanel {
     private JComponent scrollPaneCorner;
     private VisualBellViewport viewport;
     private FindPanel findPanel;
+    private LlmSuggestController llmController;
     private String name;
     private boolean wasCreatedAsNewShell;
     private Dimension currentSizeInChars;
@@ -36,7 +38,7 @@ public class JTerminalPane extends JPanel {
     protected boolean copyMode = false;
     protected boolean visualSelect = false;
     protected Location preCopyModeCursorPosition = null;
-    
+
 	private static final Pattern WHITE_SPACE = Pattern.compile("\\s+");
 
     /**
@@ -48,7 +50,7 @@ public class JTerminalPane extends JPanel {
         this.wasCreatedAsNewShell = wasCreatedAsNewShell;
         init(command, workingDirectory);
     }
-    
+
     /**
      * For XTerm-like "-e" support.
      */
@@ -61,7 +63,7 @@ public class JTerminalPane extends JPanel {
         }
         return new JTerminalPane(name, workingDirectory, argV, false);
     }
-    
+
     /**
      * Creates a new terminal running the given command, with the given
      * name. If 'name' is null, we use the command as the the name.
@@ -70,22 +72,22 @@ public class JTerminalPane extends JPanel {
         if (name == null) {
             name = originalCommand;
         }
-        
+
         // Avoid having to interpret the command (as java.lang.Process brokenly does) by passing it to the shell as-is.
         ArrayList<String> command = TerminalControl.getDefaultShell();
         command.add("-c");
         command.add(originalCommand);
-        
+
         return new JTerminalPane(name, workingDirectory, command, false);
     }
-    
+
     /**
      * Creates a new terminal running the user's shell.
      */
     public static JTerminalPane newShell() {
         return newShellWithName(null, null);
     }
-    
+
     /**
      * Creates a new terminal running the user's shell with the given name.
      */
@@ -96,7 +98,7 @@ public class JTerminalPane extends JPanel {
         }
         return new JTerminalPane(name, workingDirectory, TerminalControl.getDefaultShell(), true);
     }
-    
+
     public JTerminalPane newShellHere() {
         int fd = control.getPtyProcess().getFd();
         int foregroundPid = Posix.tcgetpgrp(fd);
@@ -111,11 +113,11 @@ public class JTerminalPane extends JPanel {
         }
         return newShellWithName(null, workingDirectory);
     }
-    
+
     public Dimension getPaneSize() {
         return viewport.getSize();
     }
-    
+
     public void optionsDidChange() {
         // We're called before start().
         if (host != null) {
@@ -132,11 +134,11 @@ public class JTerminalPane extends JPanel {
         scrollPane.invalidate();
         validate();
     }
-    
+
     private void init(List<String> command, String workingDirectory) {
         view = new TerminalView();
         view.addKeyListener(new KeyHandler());
-        
+
         EPopupMenu popupMenu = new EPopupMenu(view);
         // Indirection because we've not yet created the real MenuItemProvider.  
         popupMenu.addMenuItemProvider(new MenuItemProvider() {
@@ -144,16 +146,16 @@ public class JTerminalPane extends JPanel {
                 menuItemProvider.provideMenuItems(event, actions);
             }
         });
-        
+
         viewport = new VisualBellViewport();
         viewport.setView(view);
-        
+
         scrollPane = new JScrollPane();
         scrollPane.setBorder(null);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         scrollPane.setViewport(viewport);
-        
+
         // TODO: track background color changes
         TerminatorPreferences preferences = Terminator.getPreferences();
         Color background = preferences.getColor(TerminatorPreferences.BACKGROUND_COLOR);
@@ -161,20 +163,21 @@ public class JTerminalPane extends JPanel {
         scrollPane.getVerticalScrollBar().setUI(new ModernScrollBarUI(background));
         scrollPaneCorner = GuiUtilities.isMacOs() ? new MacScrollBarCorner() : new ScrollBarCorner(background);
         scrollPane.setCorner(JScrollPane.LOWER_RIGHT_CORNER, scrollPaneCorner);
-        
+
         optionsDidChange();
-        
+
         BirdView birdView = new BirdView(view.getBirdsEye(), scrollPane.getVerticalScrollBar());
         view.setBirdView(birdView);
-        
+
         findPanel = new FindPanel(this);
         findPanel.setVisible(false);
-        
-        add(scrollPane, BorderLayout.CENTER);
+
+        llmController = new LlmSuggestController(this);
+        add(makeOverlayLayers(scrollPane, llmController.getOverlay()), BorderLayout.CENTER);
         add(birdView, BorderLayout.EAST);
         add(findPanel, BorderLayout.SOUTH);
         GuiUtilities.keepMaximumShowing(scrollPane.getVerticalScrollBar());
-        
+
         view.sizeChanged();
         try {
             control = new TerminalControl(this, view.getModel());
@@ -190,7 +193,35 @@ public class JTerminalPane extends JPanel {
             }).start();
         }
     }
-    
+
+    /**
+     * Puts the LLM suggestion overlay on top of the terminal's scroll pane, in its top-right corner.
+     */
+    private static JLayeredPane makeOverlayLayers(final JScrollPane scrollPane, final SuggestionOverlay overlay) {
+        JLayeredPane layers = new JLayeredPane() {
+            @Override public void doLayout() {
+                scrollPane.setBounds(0, 0, getWidth(), getHeight());
+                JScrollBar verticalScrollBar = scrollPane.getVerticalScrollBar();
+                overlay.layoutWithin(getWidth(), getHeight(), verticalScrollBar.isVisible() ? verticalScrollBar.getWidth() : 0);
+            }
+
+            @Override public Dimension getPreferredSize() {
+                return scrollPane.getPreferredSize();
+            }
+
+            @Override public Dimension getMinimumSize() {
+                return scrollPane.getMinimumSize();
+            }
+        };
+        layers.add(scrollPane, JLayeredPane.DEFAULT_LAYER);
+        layers.add(overlay, JLayeredPane.PALETTE_LAYER);
+        return layers;
+    }
+
+    public LlmSuggestController getLlmController() {
+        return llmController;
+    }
+
     // On Mac OS there's an ugly hole between the horizontal scroll bar and the grow box.
     // Fill that hole with what looks like an empty horizontal scroll bar track.
     // I don't know how to get a JScrollBar to do the rendering for us, so for now here's a work-around.
@@ -218,13 +249,13 @@ public class JTerminalPane extends JPanel {
             }
         }
     }
-    
+
     static class ScrollBarCorner extends JPanel {
         ScrollBarCorner(Color background) {
             setBackground(background);
         }
     }
-    
+
     private void initSizeMonitoring() {
         class SizeMonitor extends ComponentAdapter {
             @Override
@@ -232,7 +263,7 @@ public class JTerminalPane extends JPanel {
                 // Force a size check whenever we're shown in case we're a tab whose window resized while we weren't showing, because in that case we wouldn't have received a componentResized notification.
                 componentResized(event);
             }
-            
+
             @Override
             public void componentResized(ComponentEvent event) {
                 updateTerminalSize();
@@ -240,7 +271,7 @@ public class JTerminalPane extends JPanel {
         }
         scrollPane.getViewport().addComponentListener(new SizeMonitor());
     }
-    
+
     private void updateTerminalSize() {
         Dimension size = view.getVisibleSizeInCharacters();
         if (size.equals(currentSizeInChars) == false) {
@@ -257,11 +288,11 @@ public class JTerminalPane extends JPanel {
             currentSizeInChars = size;
         }
     }
-    
+
     public TerminalView getTerminalView() {
         return view;
     }
-    
+
     /** 
      * Starts the process listening once all the user interface stuff is set up.
      * 
@@ -272,45 +303,45 @@ public class JTerminalPane extends JPanel {
         this.menuItemProvider = host.createMenuItemProvider(this);
         control.start();
     }
-    
+
     public void reset() {
         control.reset();
     }
-    
+
     public TerminalControl getControl() {
         return control;
     }
-    
+
     public String getTerminalName() {
         return name;
     }
-    
+
     public boolean shouldHoldOnExit(int status) {
         // bash (and probably other shells) return as their own exit status that of the last command executed.
         // The user will already have seen any failure in a shell window, so we ignore them.
         return (wasCreatedAsNewShell == false) && (status != 0);
     }
-    
+
     public void setTerminalName(String name) {
         this.name = name;
         host.terminalNameChanged(this);
     }
-    
+
     public Dimension getOptimalViewSize() {
         return view.getOptimalViewSize();
     }
-    
+
     private class KeyHandler implements KeyListener {
         private javax.swing.Timer waitForCorrespondingOutputTimer;
         private Location cursorPositionAfterOutput;
         private javax.swing.Timer waitForCursorStabilityTimer;
-        
+
         public KeyHandler() {
             // If your remote-echoing device is more than roundTripMilliseconds away and doesn't automatically wrap at the
             // terminal width, the automatic horizontal scrolling as you type won't work.
             // If you raise the time-out, the automatic horizontal scrolling becomes less responsive.
             int roundTripMilliseconds = 200;
-            
+
             // Give the corresponding output time to come out and so move the cursor, to which we'll scroll...
             waitForCorrespondingOutputTimer = new javax.swing.Timer(roundTripMilliseconds, new ActionListener() {
                 public void actionPerformed(ActionEvent e) {
@@ -319,7 +350,7 @@ public class JTerminalPane extends JPanel {
                 }
             });
             waitForCorrespondingOutputTimer.setRepeats(false);
-            
+
             // ... providing that it doesn't move again for a while.
             waitForCursorStabilityTimer = new javax.swing.Timer(100, new ActionListener() {
                 public void actionPerformed(ActionEvent e) {
@@ -338,14 +369,17 @@ public class JTerminalPane extends JPanel {
                 }
             });
             waitForCursorStabilityTimer.setRepeats(false);
-            
+
             // This automatic scrolling has caused minor trouble a lot of times.
             // Here's some test code which you wouldn't want to cause scrolling but which used to, all the time,
             // and now doesn't.
             // ruby -e 'while true; $stdout.write("X" * 90); $stdout.flush(); sleep(0.05); puts(); end'
         }
-        
+
         public void keyPressed(KeyEvent event) {
+            if (llmController.handleKeyPressed(event)) {
+                return;
+            }
             if (doKeyboardScroll(event) || doKeyboardTabAction(event)) {
                 event.consume();
                 return;
@@ -361,7 +395,7 @@ public class JTerminalPane extends JPanel {
                 event.consume();
                 return;
             }
-            
+
             String sequence = getEscapeSequenceForKeyCode(event);
 
             if(JTerminalPane.this.copyMode) {
@@ -407,13 +441,13 @@ public class JTerminalPane extends JPanel {
                 case KeyEvent.VK_ENTER:
                     // Annoyingly, while Linux sends a KEY_TYPED event for the keypad enter, Mac OS doesn't.
                     return (GuiUtilities.isMacOs() && event.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD) ? String.valueOf(Ascii.CR) : null;
-                
+
                 case KeyEvent.VK_HOME: return editingKeypadSequence(event, 1);
                 case KeyEvent.VK_INSERT: return editingKeypadSequence(event, 2);
                 case KeyEvent.VK_END: return editingKeypadSequence(event, 4);
                 case KeyEvent.VK_PAGE_UP: return editingKeypadSequence(event, 5);
                 case KeyEvent.VK_PAGE_DOWN: return editingKeypadSequence(event, 6);
-                
+
                 case KeyEvent.VK_UP:
                 case KeyEvent.VK_DOWN:
                 case KeyEvent.VK_RIGHT:
@@ -422,7 +456,7 @@ public class JTerminalPane extends JPanel {
                     char letter = "DACB".charAt(keyCode - KeyEvent.VK_LEFT);
                     return Ascii.ESC + "[" + oldStyleKeyModifiers(event) + letter;
                 }
-                
+
                 case KeyEvent.VK_F1:
                 case KeyEvent.VK_F2:
                 case KeyEvent.VK_F3:
@@ -458,17 +492,17 @@ public class JTerminalPane extends JPanel {
                     // Java key codes goes up to F24.
                     // Escape sequences mentioned in XTerm's "ctlseqs.ms" go up to F20 (VT220).
                     // Current Apple keyboards go up to F16, so that's where we stop.
-                    
+
                 default:
                     return null;
             }
         }
-        
+
         private String functionKeySequence(int base, int keyCode, int keyCodeBase, KeyEvent event) {
             int argument = base + (keyCode - keyCodeBase);
             return Ascii.ESC + "[" + argument + functionKeyModifiers(event) + "~";
         }
-        
+
         private String functionKeyModifiers(KeyEvent event) {
             int modifiers = 1;
             if (event.isMetaDown()) {
@@ -485,16 +519,16 @@ public class JTerminalPane extends JPanel {
             }
             return (modifiers == 1) ? "" : ";" + modifiers;
         }
-        
+
         private String oldStyleKeyModifiers(KeyEvent event) {
             String modifiers = functionKeyModifiers(event);
             return modifiers.isEmpty() ? "" : "1" + modifiers;
         }
-        
+
         private String editingKeypadSequence(KeyEvent event, int csiDigit) {
             return Ascii.ESC + "[" + csiDigit + functionKeyModifiers(event) + "~";
         }
-        
+
         public void keyReleased(KeyEvent event) {
             if(copyMode) {
             	String sequence = getEscapeSequenceForKeyCode(event);
@@ -506,7 +540,7 @@ public class JTerminalPane extends JPanel {
             	}
             }
         }
-        
+
         // Handle key presses which generate keyTyped events.
         private String getUtf8ForKeyEvent(KeyEvent e) {
             char ch = e.getKeyChar();
@@ -557,24 +591,28 @@ public class JTerminalPane extends JPanel {
                 return String.valueOf(ch);
             }
         }
-        
+
         /**
          * Handling keyTyped instead of doing everything via keyPressed and keyReleased lets us rely on Sun's translation of key presses to characters.
          * This includes alt-keypad character composition on Windows.
          */
         public void keyTyped(KeyEvent event) {
+            if (llmController.shouldSwallowKeyTyped(event)) {
+                event.consume();
+                return;
+            }
             if (TerminatorMenuBar.isKeyboardEquivalent(event)) {
                 event.consume();
                 return;
             }
-            
+
             if(copyMode) {
 				if(event.getKeyCode() == KeyEvent.VK_ESCAPE) {
 					JTerminalPane.this.toggleCopyMode();
 					return;
 				}
             }
-            
+
             String utf8 = getUtf8ForKeyEvent(event);
             if (utf8 != null) {
 				if(JTerminalPane.this.copyMode) {
@@ -619,7 +657,7 @@ public class JTerminalPane extends JPanel {
 				theView.setCursorPosition(newPos);
 			}
 		}
-		
+
 		private void handleCopyModeKeyTyped(KeyEvent event, String utf8) {
 			final TerminalView theView = JTerminalPane.this.view;
 			final Location pos = theView.getCursorPosition();
@@ -650,7 +688,7 @@ public class JTerminalPane extends JPanel {
 				Matcher matcher = WHITE_SPACE.matcher(rightText);
 				if(matcher.find()) {
 					MatchResult result = matcher.toMatchResult();
-					
+
 					int offset =  utf8Lower.equals("e") ? result.start() : result.end();
 					if(offset == 0)
 						offset = result.end();
@@ -670,11 +708,11 @@ public class JTerminalPane extends JPanel {
 				Matcher matcher = WHITE_SPACE.matcher(reverseLeftText);
 				if(matcher.find()) {
 					MatchResult result = matcher.toMatchResult();
-					
+
 					int offset = result.start();
 					if(offset == 0)
 						offset = result.end();
-					
+
 					newPos = new Location(pos.getLineIndex(), pos.getCharOffset() - offset);
 				}
 				else {
@@ -706,11 +744,11 @@ public class JTerminalPane extends JPanel {
 			if(utf8.equals("v")) {
 				toggleVisualSelect();
 			}
-			
+
 			if(JTerminalPane.this.visualSelect && newPos != null) {
 				SelectionHighlighter hl = theView.getSelectionHighlighter();
 				if(hl.hasSelection()) {
-					
+
 					if(hl.getStart().equals(pos)) {
 						System.out.println("JTerminalPane.KeyHandler.handleCopyModeKeyTyped : SelStart");
 						hl.setHighlight(newPos, hl.getEnd());
@@ -744,12 +782,12 @@ public class JTerminalPane extends JPanel {
 					hl.setHighlight(Location.min(pos, newPos), Location.max(pos, newPos));
 				}
 			}
-			
+
 			if(newPos != null) {
 				theView.setCursorPosition(newPos);
 			}
 		}
-        
+
         // gnome-terminal offers these shifted shortcuts, but nothing for scrolling by a single line.
         private boolean doKeyboardScroll(KeyEvent e) {
             final int keyCode = e.getKeyCode();
@@ -770,7 +808,7 @@ public class JTerminalPane extends JPanel {
             }
             return false;
         }
-        
+
         /**
          * Although we only advertise one pair of keystrokes on the menu, we actually support a variety of methods for changing tab.
          * The idea is that someone who subconsciously uses some other major application's keystrokes won't ever have to learn ours.
@@ -823,7 +861,7 @@ public class JTerminalPane extends JPanel {
             }
             return false;
         }
-        
+
         /**
          * Scrolls the display to the bottom if we're configured to do so.
          * This should be invoked after any action is performed as a
@@ -838,47 +876,47 @@ public class JTerminalPane extends JPanel {
             }
         }
     }
-    
+
     public SelectionHighlighter getSelectionHighlighter() {
         return view.getSelectionHighlighter();
     }
-    
+
     public void selectAll() {
         getSelectionHighlighter().selectAll();
     }
-    
+
     public void pageUp() {
         scrollVertically(-0.5);
     }
-    
+
     public void pageDown() {
         scrollVertically(0.5);
     }
-    
+
     public void lineUp() {
         scrollVertically(-1.0/currentSizeInChars.height);
     }
-    
+
     public void lineDown() {
         scrollVertically(1.0/currentSizeInChars.height);
     }
-    
+
     private void scrollVertically(double yMul) {
         // Translate JViewport's terrible confusing names into plain English.
         final int totalHeight = viewport.getViewSize().height;
         final int visibleHeight = viewport.getExtentSize().height;
-        
+
         Point p = viewport.getViewPosition();
         p.y += (int) (yMul * visibleHeight);
-        
+
         // Don't go off the top...
         p.y = Math.max(0, p.y);
         // Or bottom...
         p.y = Math.min(p.y, totalHeight - visibleHeight);
-        
+
         viewport.setViewPosition(p);
     }
-    
+
     /**
      * Hands focus to our text pane.
      */
@@ -891,11 +929,11 @@ public class JTerminalPane extends JPanel {
     public void doPasteAction() {
         view.pasteSystemClipboard();
     }
-    
+
     public void destroyProcess() {
         control.destroyProcess();
     }
-    
+
     private boolean shouldClose() {
         final PtyProcess ptyProcess = control.getPtyProcess();
         if (ptyProcess == null) {
@@ -928,7 +966,7 @@ public class JTerminalPane extends JPanel {
 
         return host.confirmClose(processesUsingTty);
     }
-    
+
     public void toggleCopyMode() {
 		if(this.copyMode) {
 			// Toggling off ; clear any selection made
@@ -967,24 +1005,24 @@ public class JTerminalPane extends JPanel {
         }
         return false;
     }
-    
+
     public void doCloseAction() {
         destroyProcess();
         control.getTerminalLogWriter().close();
         host.closeTerminalPane(this);
     }
-    
+
     /**
      * Implements visual bell.
      */
     public void flash() {
         viewport.flash();
     }
-    
+
     public TerminalPaneHost getHost() {
         return host;
     }
-    
+
     public FindPanel getFindPanel() {
         return findPanel;
     }
