@@ -234,10 +234,14 @@ why it wasn't inserted.
    "comment_marker": "<the marker the user used, or empty>",
    "confidence": 0.0}
   ```
-- Sends `response_format: {"type": "json_object"}`, which Ollama, llama.cpp,
-  LM Studio and vLLM mostly support. The reply is parsed leniently: take the
-  first `{…}` block. If parsing fails or the scenario is unknown, use
-  `general`.
+- Sends `response_format: {"type": "json_object"}`, which Ollama, llama.cpp
+  and vLLM support. LM Studio rejects it with HTTP 400, so on a 400 the
+  request is retried once without it. The reply is parsed leniently: remove
+  `<think>` blocks, then take everything from the first `{` to the last `}`,
+  which copes with code fences and chatter. If parsing fails or the scenario
+  is unknown, use **`explain`** *(changed in Phase 4, at the user's request:
+  when it's unclear what the user wants, explain what's in the terminal,
+  such as what source code does or what a diff changes).*
 - **Rescuing a request.** When `scenario = explicit-request`, the reply is
   checked against the snapshot. Model-reported columns are never trusted.
   - `request_span` must appear **verbatim** in the cursor line and end at
@@ -253,11 +257,21 @@ why it wasn't inserted.
   - `RequestDetector` has unit tests for the verification step, using
     made-up classifier replies: correct, wrong-span, span-not-at-cursor and
     marker-mismatch cases.
-- `max_tokens` is small (about 150) and `temperature` 0.
+- `temperature` is 0. `max_tokens` is **not** set: reasoning models count
+  their thinking against it and could return an empty reply.
 - An optional **classifier model** preference lets a smaller, faster model
   do this pass; it defaults to the main model.
 - A **"Skip classification"** preference uses `general` directly, for
-  slow models.
+  slow models. `general` has no `scenario:` front matter, so the classifier
+  never chooses it. It explains an error if there is one, and otherwise
+  explains what's in the terminal.
+
+**Bundled scenarios** (Phase 4): `explicit-request` (status "Answering"),
+`command-error` ("Diagnosing the error"), `log-error` ("Looking into the
+error") and `explain` ("Explaining", also the fallback). Each template's
+`status:` front matter is what the overlay shows while answering; during pass
+1 it shows "Working out what would help". A `COMMAND:` reply may be followed
+by up to three lines of explanation, which suits error diagnoses.
 
 **Pass 2 — answer:** render the chosen scenario's template and stream the
 reply.
@@ -315,7 +329,8 @@ name replaces the bundled one.
     explicit-request.md      # scenario: user typed a comment request
     command-error.md         # scenario: last command failed
     log-error.md             # scenario: error visible in a log / output
-    general.md               # fallback: "what's most useful here?"
+    explain.md               # scenario: explain what's in the terminal; the fallback
+    general.md               # used instead of pass 1 when classification is skipped
     <user-added>.md          # any extra scenario; auto-listed in classify
 ```
 
@@ -686,6 +701,23 @@ bash:
   prompt, a plain-English request with no marker.
 - The overlay header shows the chosen scenario.
 
+*Status (2026-09-13): done* (commits `2f1e72d8`..`f872c0b5`). 67 unit tests
+pass, including `Classifier` (lenient JSON, unknown scenarios, rescued and
+paraphrased requests, full-screen apps) and rendering the classifier prompt
+and every bundled scenario with no unknown variables. Checked under Xvfb
+against a fake classifier and answer server:
+- A failed `ls` → classifier reply wrapped in a code fence → `command-error`
+  → a command plus a diagnosis, which Tab inserted.
+- A diff on screen → `explain`.
+- `' what does this do`, with `'` not among the markers → rescued as
+  `explicit-request` → Tab replaced the request with the command.
+- HTTP 400 for `response_format` → retried without it → a reply that wasn't
+  JSON → the `explain` fallback.
+- Preview Request shows both passes and sends nothing.
+
+**Still to do:** tune the prompts against real local models (Phase 5); check
+`% …` in Octave and plain-English requests with a real model.
+
 **Phase 5 — Polish and docs**
 - User-context file, first-run creation of `~/.terminator/llm/` containing
   commented example files.
@@ -719,6 +751,7 @@ bash:
 | 2026-09-13 | Move to JDK 17 gradually (Phase 0a), with 11 as the fallback. No Java 8 assumptions in new code. |
 | 2026-09-13 | Phase 0a done: **staying on JDK 17** after the Linux and Mac smoke tests. |
 | 2026-09-13 | Gson 2.14.0. Overlay font size is a percentage. The Edit → LLM menu arrives with its actions in Phase 2. |
+| 2026-09-13 | Phase 4: when it's unclear what the user wants, **explain what's in the terminal** (code, diffs, config, output) rather than guessing. `explain` is the classifier's fallback, and `general` explains too. |
 | 2026-09-13 | Phase 3 redesigned after trying Phase 2: **no automatic insertion**. Tab inserts a shown command (without a `#` prefix, never run); if that isn't safe it's copied instead. Copy and the Copy shortcut copy just the command. |
 
 ## 13. Open questions
