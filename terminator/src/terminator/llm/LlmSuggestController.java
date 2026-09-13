@@ -195,8 +195,8 @@ public final class LlmSuggestController {
                 if (cause instanceof CancellationException) {
                     return null;
                 }
-                // Some servers (LM Studio, for one) reject "response_format": {"type": "json_object"}; the prompt asks for JSON anyway.
-                if (attempt == 1 && request.responseFormat() != null && cause instanceof LlmException llmException && llmException.httpStatus().orElse(0) == 400) {
+                // The prompt asks for JSON anyway, so a server that rejects the response format can do without it.
+                if (attempt == 1 && OpenAiClient.isResponseFormatRejection(request, cause)) {
                     request = request.withoutResponseFormat();
                     continue;
                 }
@@ -334,6 +334,29 @@ public final class LlmSuggestController {
 
     private static boolean isSuggestKeyStroke(KeyEvent event) {
         return event.getKeyCode() == KeyEvent.VK_L && (event.getModifiersEx() & MODIFIER_MASK) == SUGGEST_MODIFIERS;
+    }
+
+    /**
+     * Opens ~/.terminator/llm in the file manager, creating it with starter files first if need be.
+     */
+    public static void showUserFiles(Component owner) {
+        java.nio.file.Path directory = LlmFiles.userDirectory();
+        EXECUTOR.execute(() -> {
+            ArrayList<String> warnings = new ArrayList<>();
+            LlmFiles.createStarterFilesIfMissing(directory, warnings);
+            String problem = warnings.isEmpty() ? null : String.join("\n", warnings);
+            if (problem == null) {
+                try {
+                    Desktop.getDesktop().open(directory.toFile());
+                } catch (Exception ex) {
+                    problem = "Couldn't open a file manager (" + ex.getMessage() + ").";
+                }
+            }
+            if (problem != null) {
+                String message = problem + "\n\nThe LLM files are in " + directory;
+                GuiUtilities.invokeLater(() -> SimpleDialog.showDetails(owner, "LLM Files", message));
+            }
+        });
     }
 
     /**

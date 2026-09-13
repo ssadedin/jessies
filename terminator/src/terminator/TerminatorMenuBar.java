@@ -408,6 +408,7 @@ public class TerminatorMenuBar extends EMenuBar {
         JMenu menu = GuiUtilities.makeMenu("LLM", 'L');
         menu.add(new LlmSuggestAction());
         menu.add(new LlmPreviewRequestAction());
+        menu.add(new LlmShowFilesAction());
         return menu;
     }
 
@@ -431,6 +432,16 @@ public class TerminatorMenuBar extends EMenuBar {
         @Override
         protected void performPaneAction(JTerminalPane terminalPane) {
             terminalPane.getLlmController().previewRequest();
+        }
+    }
+
+    public static class LlmShowFilesAction extends AbstractAction {
+        public LlmShowFilesAction() {
+            super("Show LLM Files");
+        }
+
+        public void actionPerformed(ActionEvent e) {
+            LlmSuggestController.showUserFiles(getFocusedTerminatorFrame());
         }
     }
 

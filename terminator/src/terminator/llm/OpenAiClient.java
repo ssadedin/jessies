@@ -133,6 +133,14 @@ public final class OpenAiClient {
         return new OpenAiClient(settings.endpoint(), settings.apiKey(), settings.timeout(), settings.allowNonLocalEndpoint(), executor);
     }
 
+    /**
+     * True if a request failed only because the server doesn't support its "response_format"
+     * (LM Studio answers {"type": "json_object"} with HTTP 400), so it's worth retrying without it.
+     */
+    public static boolean isResponseFormatRejection(ChatRequest request, Throwable failure) {
+        return request.responseFormat() != null && failure instanceof LlmException llmException && llmException.httpStatus().orElse(0) == 400;
+    }
+
     static String toJson(ChatRequest request) {
         return GSON.toJson(request);
     }
