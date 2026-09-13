@@ -42,7 +42,7 @@ public final class SuggestionOverlay extends JPanel {
         bodyScrollPane.setBorder(null);
         bodyScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        copyButton.addActionListener(event -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(copyText), null));
+        copyButton.addActionListener(event -> copyToClipboard());
         copyButton.setEnabled(false);
 
         JPanel footer = new JPanel(new BorderLayout());
@@ -68,6 +68,7 @@ public final class SuggestionOverlay extends JPanel {
         copyText = "";
         body.setForeground(foreground());
         copyButton.setEnabled(false);
+        setHint("Esc to close");
         setStatus(statusText);
         setVisible(true);
         relayout();
@@ -75,6 +76,22 @@ public final class SuggestionOverlay extends JPanel {
 
     public void setStatus(String statusText) {
         status.setText(statusText);
+    }
+
+    public void setHint(String hintText) {
+        hint.setText(hintText);
+    }
+
+    /**
+     * Copies what Copy copies (just the command, for a command suggestion). Returns false if there's nothing to copy.
+     */
+    public boolean copyToClipboard() {
+        if (!isVisible() || copyText.isBlank()) {
+            return false;
+        }
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(copyText), null);
+        setStatus("Copied to the clipboard");
+        return true;
     }
 
     public void appendText(String text) {
@@ -101,6 +118,16 @@ public final class SuggestionOverlay extends JPanel {
         body.setText(reply.displayText());
         copyText = reply.copyText();
         copyButton.setEnabled(!copyText.isBlank());
+        relayout();
+    }
+
+    /**
+     * Explains why a command couldn't be inserted, below the command itself.
+     */
+    public void showNotInserted(SuggestionReply reply, String problem) {
+        setStatus("Copied instead of inserting");
+        setHint("Esc to close");
+        body.setText(reply.displayText() + "\n\n(Not inserted because " + problem + ".)");
         relayout();
     }
 

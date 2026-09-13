@@ -924,6 +924,10 @@ public class JTerminalPane extends JPanel {
         view.requestFocus();
     }
     public void doCopyAction() {
+        // With nothing selected, Copy copies an LLM suggestion that's showing.
+        if (!getSelectionHighlighter().hasSelection() && llmController.copySuggestion()) {
+            return;
+        }
         getSelectionHighlighter().copyToSystemClipboard();
     }
     public void doPasteAction() {

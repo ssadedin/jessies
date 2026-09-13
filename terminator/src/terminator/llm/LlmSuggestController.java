@@ -53,6 +53,11 @@ public final class LlmSuggestController {
     private Runnable deliverProgress;
     private boolean swallowEscapeKeyTyped = false;
 
+    // The finished suggestion being shown, and what's needed to insert it safely.
+    private SuggestionReply shownReply;
+    private TerminalSnapshot shownSnapshot;
+    private Optional<RequestDetector.DetectedRequest> shownRequest = Optional.empty();
+
     public LlmSuggestController(JTerminalPane pane) {
         this.pane = pane;
     }
@@ -79,6 +84,7 @@ public final class LlmSuggestController {
             return;
         }
         TerminalSnapshot snapshot = captureSnapshot(settings);
+        AtomicReference<Optional<RequestDetector.DetectedRequest>> detectedRequest = new AtomicReference<>(Optional.empty());
         overlay.start("Reading the terminal...", font, settings.overlayFontPercent());
 
         // Streamed text is batched and delivered to the overlay by a timer, rather than flooding the event queue.
@@ -109,6 +115,7 @@ public final class LlmSuggestController {
                 if (settings.debugLog()) {
                     LlmDebugLog.append("request to " + settings.endpoint() + " model " + settings.model() + " template " + prompt.templateName(), describe(prompt));
                 }
+                detectedRequest.set(prompt.request());
                 statusPrefix.set(prompt.request().isPresent() ? "Answering" : "Looking for something useful");
                 OpenAiClient.ChatCall call = clientFor(settings).streamChat(prompt.chatRequest(), text -> {
                     synchronized (pendingText) {
@@ -127,18 +134,18 @@ public final class LlmSuggestController {
                     if (settings.debugLog()) {
                         LlmDebugLog.append("response", failure == null ? text : String.valueOf(failure));
                     }
-                    GuiUtilities.invokeLater(() -> finish(requestGeneration, failure));
+                    GuiUtilities.invokeLater(() -> finish(requestGeneration, failure, snapshot, detectedRequest.get()));
                 });
             } catch (LlmException | IllegalArgumentException ex) {
-                GuiUtilities.invokeLater(() -> finish(requestGeneration, ex));
+                GuiUtilities.invokeLater(() -> finish(requestGeneration, ex, snapshot, Optional.empty()));
             } catch (RuntimeException ex) {
                 Log.warn("LLM suggestion failed", ex);
-                GuiUtilities.invokeLater(() -> finish(requestGeneration, ex));
+                GuiUtilities.invokeLater(() -> finish(requestGeneration, ex, snapshot, Optional.empty()));
             }
         });
     }
 
-    private void finish(int requestGeneration, Throwable failure) {
+    private void finish(int requestGeneration, Throwable failure, TerminalSnapshot snapshot, Optional<RequestDetector.DetectedRequest> request) {
         if (generation.get() != requestGeneration) {
             return;
         }
@@ -157,6 +164,12 @@ public final class LlmSuggestController {
         } else {
             SuggestionReply reply = SuggestionReply.parse(overlay.getText());
             overlay.showReply(reply.command().isPresent() ? "Suggested command" : "Suggestion", reply);
+            if (reply.command().isPresent()) {
+                shownReply = reply;
+                shownSnapshot = snapshot;
+                shownRequest = request;
+                overlay.setHint("Tab to insert \u00b7 Esc to close");
+            }
         }
     }
 
@@ -170,6 +183,9 @@ public final class LlmSuggestController {
 
     private void cancel() {
         generation.incrementAndGet();
+        shownReply = null;
+        shownSnapshot = null;
+        shownRequest = Optional.empty();
         stopProgressTimer();
         if (currentCall != null) {
             currentCall.cancel();
@@ -194,6 +210,11 @@ public final class LlmSuggestController {
             return false;
         }
         int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.VK_TAB && (event.getModifiersEx() & MODIFIER_MASK) == 0 && shownReply != null) {
+            insertShownCommand();
+            event.consume();
+            return true;
+        }
         if (keyCode == KeyEvent.VK_ESCAPE && (event.getModifiersEx() & MODIFIER_MASK) == 0) {
             dismiss();
             event.consume();
@@ -206,6 +227,35 @@ public final class LlmSuggestController {
             dismiss();
         }
         return false;
+    }
+
+    /**
+     * Puts the suggested command on the command line (replacing the typed request, if any) without running it,
+     * or copies it and explains why not if that isn't safe. See SuggestionInserter.
+     */
+    private void insertShownCommand() {
+        TerminalModel model = pane.getTerminalView().getModel();
+        Location cursor = model.getCursorPosition();
+        String currentLine = cursor.getLineIndex() < model.getLineCount() ? model.getTextLine(cursor.getLineIndex()).getString() : "";
+        SuggestionInserter.Decision decision = SuggestionInserter.decide(shownReply.command().get(), shownSnapshot, shownRequest, currentLine, cursor.getCharOffset(), model.usingAlternateBuffer());
+        if (decision.insertion().isEmpty()) {
+            overlay.copyToClipboard();
+            overlay.showNotInserted(shownReply, decision.problem());
+            return;
+        }
+        SuggestionInserter.Insertion insertion = decision.insertion().get();
+        // Backspace sends DEL, as JTerminalPane does. Bracketed paste (when the shell has turned it on) inserts the command literally.
+        String keystrokes = String.valueOf(Ascii.DEL).repeat(insertion.eraseCount()) + model.bracketPaste(insertion.command());
+        dismiss();
+        pane.getControl().sendUtf8String(keystrokes);
+    }
+
+    /**
+     * Copies the suggestion being shown, if any, for the Copy action when nothing is selected in the terminal.
+     * Returns false if there's no suggestion to copy.
+     */
+    public boolean copySuggestion() {
+        return overlay.copyToClipboard();
     }
 
     /**
