@@ -278,7 +278,7 @@ streams straight into the overlay.
 | `llmRedactSecrets` | Boolean | `true` |
 | `llmCommentMarkers` | String | `# -- //` (space-separated; `'` can be added) |
 | `llmTimeoutSeconds` | Integer | `120` |
-| `llmOverlayFontSizeDelta` | Integer | `-2` |
+| `llmOverlayFontPercent` | Integer | `85` (the preferences UI only accepts positive integers, so a size delta such as −2 won't work) |
 | `llmDebugLog` | Boolean | `false` |
 
 ### 6.4 Template files
@@ -378,7 +378,7 @@ budget before the screen does.
   inside `JTerminalPane`, anchored top-right with a 12px margin. Width is at
   most 50% of the pane (minimum about 40 columns); height is at most 40%,
   with a scroll bar beyond that.
-- Uses the terminal font at `size + llmOverlayFontSizeDelta`. Colours come
+- Uses the terminal font scaled to `llmOverlayFontPercent`. Colours come
   from the palette: background is the terminal background mixed about 8%
   toward the foreground, at 95% opacity; the border is the selection colour.
 - Contents: a header line (scenario and status/spinner), a body (read-only
@@ -526,16 +526,32 @@ Verified on **Linux aarch64 only** (Ubuntu 26.04, in a container):
 - The launcher refuses a (fake) Java 11 `java` with "requires Java 17 or
   newer".
 
-**Still to do before the decision point:** the full smoke test on **Mac**
-(build via `java_home -v 17+`, screen menu bar, Dock, Cmd shortcuts, copy
-mode, font size, preferences, horizontal scrolling) and interactive Linux
-checks that Xvfb can't cover (IME, dead keys, resize).
+Follow-up `3ca2d5ce`: the Mac JDK lookup now checks `JAVA_HOME` first (so
+SDKMAN! and Homebrew JDKs work), then `java_home -v 17+`, and otherwise fails
+with a clear message.
+
+**Decision (2026-09-13): stay on JDK 17.** The Mac smoke test passed.
 
 **Phase 0b — Groundwork**
 - Add the Gson jar; confirm `make` and `make test` pass and the app starts.
 - Check packaging includes `lib/jars`.
-- Add the `terminator.llm` package skeleton, the LLM preferences group and
-  the empty Edit → LLM submenu.
+- Add the `terminator.llm` package skeleton and the LLM preferences group.
+  The Edit → LLM submenu moves to Phase 2, so the menu never shows items
+  that do nothing.
+
+*Status (2026-09-13): done.*
+- `terminator/lib/jars/gson-2.14.0.jar`. The SHA-1 matched on two Maven
+  Central mirrors; provenance is in `lib/jars/README.txt`.
+- **Packaging needs no change:** the installer file list includes all of
+  `lib/`, and `invoke-java.rb` put the jar on the runtime classpath (checked
+  on a launched app).
+- New "LLM" preferences tab with the §6.3 keys, added after Presets because
+  `willAddRows` looks Presets up by index. Checked visually under Xvfb.
+- `terminator.llm.LlmSettings`: an immutable record read from preferences
+  (classifier model falls back to the main model, API key comes from the
+  environment, markers sorted longest first), with unit tests. Terminator's
+  `make test` now runs 2 passing tests; before this it reported "No tests
+  found!".
 
 **Phase 1 — Core logic, no UI, unit-tested**
 - `TerminalSnapshot` (logic that builds from a list of lines, testable
@@ -547,7 +563,7 @@ checks that Xvfb can't cover (IME, dead keys, resize).
   `main()`.
 
 **Phase 2 — Hotkey to overlay, single pass**
-- `LlmSuggestAction` and its accelerators, including swallowing `^L` for
+- The Edit → LLM submenu; `LlmSuggestAction` and its accelerators, including swallowing `^L` for
   Ctrl+Shift+L on Linux (§3.2); `LlmSuggestController`; `SuggestionOverlay`;
   key handling for closing the overlay; cancellation; error display.
 - Every reply goes to the overlay. Locally detected requests use the
@@ -602,10 +618,9 @@ checks that Xvfb can't cover (IME, dead keys, resize).
 | 2026-09-13 | Menu: **Edit → LLM**. Hotkey: Ctrl+Cmd+L on Mac, Ctrl+Shift+L elsewhere. |
 | 2026-09-13 | Default markers are `#`, `--` and `//`. `'` is off by default; requests using it (or any other syntax) can be rescued by pass 1 with span verification. |
 | 2026-09-13 | Move to JDK 17 gradually (Phase 0a), with 11 as the fallback. No Java 8 assumptions in new code. |
+| 2026-09-13 | Phase 0a done: **staying on JDK 17** after the Linux and Mac smoke tests. |
+| 2026-09-13 | Gson 2.14.0. Overlay font size is a percentage. The Edit → LLM menu arrives with its actions in Phase 2. |
 
 ## 13. Open questions
 
-None blocking. Items to settle during implementation:
-
-1. The outcome of the Phase 0a decision point (17 or 11).
-2. Whether `package-for-distribution.rb` bundles `lib/jars` (Phase 0b).
+None blocking.
