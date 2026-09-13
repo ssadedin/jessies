@@ -35,13 +35,17 @@ activity in v1.
    **Edit → LLM** menu.
 3. The overlay appears straight away with a status line
    (`Reading request…` / `Diagnosing command error…`). Esc cancels.
-4. The result arrives:
-   - **A command, with a safe place to put it:** the typed request is erased
-     and `# <command>` is typed in its place using the same comment marker.
-     The overlay closes.
-   - **Anything else:** the answer streams into the overlay. Esc or any key
-     closes it (the key still reaches the terminal); a Copy button copies the
-     text.
+4. The answer streams into the overlay. *(Redesigned in Phase 3: nothing is
+   ever typed into the terminal automatically.)*
+   - **A command** (the model replied `COMMAND: …`) is shown on its own with
+     "Tab to insert". **Tab** puts it on the command line without running
+     it, replacing the typed `# request` if there was one. If that isn't safe
+     (§5.3), it's copied to the clipboard instead and the overlay says why.
+   - **Copy**, or the Copy shortcut (Cmd+C / Alt+C) when nothing is selected
+     in the terminal, copies just the command, or the whole answer if it
+     isn't a command.
+   - Esc, or any other key, closes the overlay; the key still reaches the
+     terminal.
 
 ## 3. Architecture
 
@@ -70,9 +74,10 @@ everything after that runs on a background thread and works on immutable data.
  Pass 2: PromptTemplates.render(scenario, vars) ──► OpenAiClient.streamChat()
    │
    ▼  EDT (streamed chunks)
- SuggestionPresenter
-   ├─ COMMAND reply and safe to insert ──► SuggestionInserter → TerminalControl.sendUtf8String
-   └─ otherwise ──► SuggestionOverlay
+ SuggestionOverlay (streams the reply; SuggestionReply parses COMMAND:)
+   │
+   ▼  user presses Tab
+ SuggestionInserter (safety checks) ──► TerminalControl.sendUtf8String, or copy and explain
 ```
 
 ### 3.1 New classes (`terminator/src/terminator/llm/`)
@@ -87,8 +92,8 @@ everything after that runs on a background thread and works on immutable data.
 | `PromptTemplates` | Loads bundled default templates and user overrides, parses front matter, renders `{{var}}` placeholders. See §6. |
 | `Classifier` | Pass 1. Builds the classification prompt from the available scenario descriptions and parses the JSON reply leniently. |
 | `OpenAiClient` | `POST {endpoint}/chat/completions` with `stream: true`, parses server-sent events and supports cancellation. Uses `java.net.http.HttpClient` (see §9.2). |
-| `SuggestionPresenter` | Decides whether a reply is a single-line command or overlay text, and sends it to the right place. |
-| `SuggestionInserter` | Safety checks, then erases the request and types `<marker> <command>` into the pty. |
+| `SuggestionReply` | Parses a finished reply: a `COMMAND:` first line (tolerating case, backticks, a code fence and trailing explanation) is a command. Decides what's shown and what Copy copies. |
+| `SuggestionInserter` | When the user presses Tab: safety checks, then erases the request and inserts the command (no newline), or explains why not. |
 | `SuggestionOverlay` | Swing component shown over the terminal (§8). |
 | `LlmDebugLog` | Opt-in log of requests and responses. |
 
@@ -171,23 +176,27 @@ tooling):
 so the request is on the previous prompt line and the cursor line is an empty
 prompt. Pass 1 will usually pick this up from the screen anyway.
 
-### 5.3 Single-line insertion rules
+### 5.3 Inserting a suggested command (Tab)
 
-A reply is treated as a single-line command only if it matches the output
-convention (§6.2) **and** all of these are true:
+*(Redesigned in Phase 3.)* Nothing is typed automatically. When the overlay
+shows a finished command suggestion, **Tab** inserts it, and only if all of
+these are true:
 
-- the alternate screen is off;
-- the cursor line text is **unchanged** since the snapshot (compare
-  strings), so the user hasn't typed in the meantime;
-- the cursor is at the end of the line;
+- the alternate screen is off, both now and when the request was made;
+- the cursor line text **and** cursor column are **unchanged** since the
+  snapshot, so nothing has been typed or printed in the meantime;
 - one of:
   - there was an explicit request, either detected locally (§5.2) or
     rescued by the classifier and verified (§6.1), or
-  - there's no request and the cursor line looks like an empty prompt: it
-    ends with a common prompt terminator (`$ `, `# `, `% `, `> `, `] `) and
-    nothing follows it.
+  - there's no request and the cursor is at an empty prompt: whitespace
+    before the cursor, after a non-alphanumeric character (`$`, `#`, `%`,
+    `>`, `]`, `:`, `➤`, `❯`…), with nothing after the cursor. Text the user
+    has typed usually ends in a letter or digit;
+- the line isn't asking for a password or passphrase (otherwise the command
+  would be typed invisibly, and Enter would submit it).
 
-Otherwise the command is shown in the overlay with a Copy button.
+Otherwise the command is copied to the clipboard and the overlay explains
+why it wasn't inserted.
 
 **Insertion:**
 
@@ -196,16 +205,13 @@ Otherwise the command is shown in the overlay with a Copy button.
    cursor. Backspaces are used instead of `^U` because they erase only the
    comment. A user who typed `ls -la # why…` keeps `ls -la`, and backspace
    behaves the same in bash, zsh, psql and REPLs whatever their key bindings.
-2. Send `<marker> <command>`, using the marker the user typed, or `#` when
-   there was no request.
-3. **Sanitise first:** reject a command containing any control character
-   (`< 0x20`, `0x7f`, ESC) or longer than 500 characters; reject a
-   multi-line reply outright (it goes to the overlay instead). **Never send
-   CR or LF.**
-
-Note for docs: zsh needs `setopt interactivecomments` if the user wants to
-press Enter on a commented line. Normally they delete the marker first, so
-this rarely matters.
+2. Send the command itself, with no comment marker, since the user has
+   explicitly accepted it. Use bracketed paste when the shell has turned it
+   on, so the text goes in literally (for example in vi-mode shells).
+3. **Sanitise first:** refuse a command containing any control character
+   (`< 0x20` including tab and newline, `0x7f`, C1 `0x80`–`0x9f`) or longer
+   than 1000 characters. Only the reply's first `COMMAND:` line is used.
+   **Never send CR or LF.**
 
 ## 6. Prompts and templates
 
@@ -649,12 +655,26 @@ characters of terminal are always kept.
 **Not yet checked on Mac:** Ctrl+Cmd+L with the screen menu bar, and how the
 overlay looks.
 
-**Phase 3 — Single-line insertion**
-- The `COMMAND:` convention, `SuggestionPresenter`, `SuggestionInserter`
-  with every §5.3 check and sanitising.
+**Phase 3 — Inserting and copying commands** *(redesigned: Tab to accept, not automatic insertion)*
+- `SuggestionReply` (the `COMMAND:` convention), `SuggestionInserter` with
+  every §5.3 check and sanitising, Tab handling in the overlay, and the Copy
+  shortcut acting on the overlay when nothing is selected.
 - Manual test matrix: bash and zsh locally, bash over SSH, psql, python REPL,
-  vim (should fall back to the overlay), typing during the request (should
-  fall back to the overlay).
+  vim (should copy instead), typing during the request (closes the overlay).
+
+*Status (2026-09-13): done* (commits `e8ce09ff`, `ddee8ca4`). 62 unit tests
+pass (salma-hayek and terminator), including `SuggestionReply` and
+`SuggestionInserter` (insertion replacing a request, a range of prompt
+styles including `➤` and `❯`, and every refusal). Checked under Xvfb with
+bash:
+- A command is shown without its label, with "Tab to insert".
+- Alt+C copies just the command; pasting it back confirmed that.
+- Tab replaced `# count words in each file` with the command, which wasn't
+  run.
+- Tab at an empty prompt inserted the command.
+- With `ls -la` already typed, Tab refused, copied instead and explained why.
+
+**Not yet checked:** zsh, SSH, psql and Python REPLs, and anything on Mac.
 
 **Phase 4 — Two-pass classification**
 - `Classifier`, `classify.md`, `command-error.md`, `log-error.md`, the
@@ -698,6 +718,7 @@ overlay looks.
 | 2026-09-13 | Move to JDK 17 gradually (Phase 0a), with 11 as the fallback. No Java 8 assumptions in new code. |
 | 2026-09-13 | Phase 0a done: **staying on JDK 17** after the Linux and Mac smoke tests. |
 | 2026-09-13 | Gson 2.14.0. Overlay font size is a percentage. The Edit → LLM menu arrives with its actions in Phase 2. |
+| 2026-09-13 | Phase 3 redesigned after trying Phase 2: **no automatic insertion**. Tab inserts a shown command (without a `#` prefix, never run); if that isn't safe it's copied instead. Copy and the Copy shortcut copy just the command. |
 
 ## 13. Open questions
 
