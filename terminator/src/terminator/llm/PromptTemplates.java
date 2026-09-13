@@ -34,7 +34,10 @@ public final class PromptTemplates {
         }
     }
 
-    public record Scenario(String name, String description, String templateName) {
+    /**
+     * @param status what the overlay says while answering, such as "Diagnosing the error"
+     */
+    public record Scenario(String name, String description, String status, String templateName) {
     }
 
     /**
@@ -110,7 +113,7 @@ public final class PromptTemplates {
     public List<Scenario> scenarios() {
         return templates.values().stream()
                 .filter(template -> template.scenario().isPresent())
-                .map(template -> new Scenario(template.scenario().get(), template.frontMatter().getOrDefault("description", ""), template.name()))
+                .map(template -> new Scenario(template.scenario().get(), template.frontMatter().getOrDefault("description", ""), template.frontMatter().getOrDefault("status", "Answering"), template.name()))
                 .sorted(Comparator.comparing(Scenario::name))
                 .toList();
     }
@@ -188,7 +191,7 @@ public final class PromptTemplates {
         Assert.equals(prompt.user(), "## Terminal\n$ echo '{{request}}' $1 \\n\n## Request\nlist big files {{mystery}}\nMarker: #");
         Assert.equals(prompt.unknownVariables(), Set.of("mystery"));
 
-        Assert.equals(templates.scenarios(), List.of(new Scenario("explicit-request", "The user typed a request.", "explicit-request")));
+        Assert.equals(templates.scenarios(), List.of(new Scenario("explicit-request", "The user typed a request.", "Answering", "explicit-request")));
 
         // Without a split, everything is the user message.
         Assert.equals(fromSources(Map.of("t", "Just {{x}}")).render("t", Map.of("x", "this")), new RenderedPrompt("", "Just this", Set.of()));
