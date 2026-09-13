@@ -145,11 +145,11 @@ public abstract class Preferences extends PreferenceGetter {
     }
     
     public void initPreferencesMenuItem(JMenu editMenu) {
-        if (GuiUtilities.isMacOs() == false) {
+//        if (GuiUtilities.isMacOs() == false) {
             editMenu.addSeparator();
             editMenu.add(makeShowPreferencesAction());
-            return;
-        }
+//            return;
+//        }
         
         try {
             // TODO: write this directly when we require Java >= 9.
