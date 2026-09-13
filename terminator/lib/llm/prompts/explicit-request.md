@@ -1,6 +1,7 @@
 ---
 scenario: explicit-request
-description: The user has typed a question or instruction on the current line, usually as a comment, and wants it answered.
+description: The user has typed a question or instruction on the cursor line, usually after a comment marker, and wants it answered.
+status: Answering
 ---
 {{> _system}}
 
