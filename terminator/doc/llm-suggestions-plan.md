@@ -272,9 +272,10 @@ Every answer template ends with the same instruction, from a shared
 > Otherwise reply with a concise explanation (at most ~15 lines); put any
 > commands on their own lines.
 
-The presenter buffers the first 8 characters of the stream. If they are
-`COMMAND:`, it collects the rest of the reply and applies §5.3. If not, it
-streams straight into the overlay.
+The reply always streams into the overlay. When it finishes,
+`SuggestionReply` checks whether the first line is `COMMAND: …`. If so, the
+overlay shows just the command, offers Tab to insert it (§5.3), and Copy
+copies just the command.
 
 ### 6.3 Preferences ("LLM" group in `TerminatorPreferences`)
 
