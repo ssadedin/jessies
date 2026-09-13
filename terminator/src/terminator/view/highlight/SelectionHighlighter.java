@@ -282,11 +282,11 @@ public class SelectionHighlighter implements ClipboardOwner, MouseListener, Mous
      * Copies the selected text to X11's selection (like XTerm and friends) or Windows's clipboard (like PuTTY).
      */
     private void selectionChanged() {
-        if (e.util.GuiUtilities.isWindows()) {
+//        if (e.util.GuiUtilities.isWindows()) {
             copyToSystemClipboard();
-        } else {
-            updateSystemSelection();
-        }
+//        } else {
+//            updateSystemSelection();
+//        }
     }
     
     private void copyToClipboard(Clipboard clipboard) {
