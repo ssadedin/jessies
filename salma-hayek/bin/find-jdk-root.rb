@@ -150,7 +150,8 @@ else
     end
 
     if target_os() == "Darwin"
-      return `/usr/libexec/java_home`
+      # Ask for a JDK new enough to build with, rather than whatever java_home(1) considers the default.
+      return `/usr/libexec/java_home -v #{JAVA_MAJOR_VERSION}+`.chomp()
     end
 
     # On FreeBSD, the 'javac' family binaries are actually symlinks in /usr/local/bin/,
