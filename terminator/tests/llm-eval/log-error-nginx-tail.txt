@@ -1,0 +1,10 @@
+expect-scenario: log-error
+expect-command: no
+expect-mentions: upstream, 127.0.0.1:3000, backend, refused
+title: root@web01: ~
+---
+root@web01:~# tail -n 6 /var/log/nginx/error.log
+2026/09/12 09:14:55 [error] 1187#1187: *5021 connect() failed (111: Connection refused) while connecting to upstream, client: 10.2.0.14, server: tracker.example.org, request: "GET / HTTP/1.1", upstream: "http://127.0.0.1:3000/", host: "tracker.example.org"
+2026/09/12 09:14:56 [error] 1187#1187: *5023 connect() failed (111: Connection refused) while connecting to upstream, client: 10.2.0.14, server: tracker.example.org, request: "GET /favicon.ico HTTP/1.1", upstream: "http://127.0.0.1:3000/favicon.ico", host: "tracker.example.org"
+2026/09/12 09:15:30 [error] 1187#1187: *5031 connect() failed (111: Connection refused) while connecting to upstream, client: 10.2.0.22, server: tracker.example.org, request: "POST /api/login HTTP/1.1", upstream: "http://127.0.0.1:3000/api/login", host: "tracker.example.org"
+root@web01:~# 

@@ -1,0 +1,12 @@
+expect-scenario: explain
+expect-command: no
+expect-mentions: /data, 97%, full
+title: simon@hpc-login1: ~
+---
+simon@hpc-login1:~$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda2        98G   41G   52G  45% /
+tmpfs            63G     0   63G   0% /dev/shm
+/dev/sdb1       7.3T  7.1T  218G  97% /data
+nfs01:/home     2.0T  1.2T  820G  60% /home
+simon@hpc-login1:~$ 

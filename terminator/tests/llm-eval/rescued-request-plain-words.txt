@@ -1,0 +1,12 @@
+expect-scenario: explicit-request
+expect-command: yes
+expect-mentions: lsof, ss , netstat, fuser
+title: simon@zenith: ~
+---
+simon@zenith:~$ npm start
+
+> tracker@1.4.0 start
+> node server.js
+
+Error: listen EADDRINUSE: address already in use :::8080
+simon@zenith:~$ which process is using port 8080

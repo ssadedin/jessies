@@ -1,0 +1,26 @@
+expect-scenario: explain
+expect-command: no
+expect-mentions: coverage, depth, window
+alternate-buffer: true
+title: vim coverage.py
+---
+import numpy as np
+ 
+def windowed_mean_depth(depths, window=100, min_depth=10):
+    """Return (start, mean) for each window whose mean depth is below min_depth."""
+    low = []
+    for start in range(0, len(depths), window):
+        chunk = depths[start:start + window]
+        mean = np.mean(chunk)
+        if mean < min_depth:
+            low.append((start, float(mean)))
+    return low
+ 
+if __name__ == "__main__":
+    import sys
+    depths = np.loadtxt(sys.argv[1], dtype=int)
+    for start, mean in windowed_mean_depth(depths):
+        print(f"{start}\t{mean:.1f}")
+~
+~
+"coverage.py" 18L, 571B                                       3,1           All

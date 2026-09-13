@@ -1,0 +1,10 @@
+expect-scenario: command-error
+expect-command: yes
+expect-mentions: chmod
+title: deploy@web01: /opt/app
+---
+deploy@web01:/opt/app$ ls -l deploy.sh
+-rw-r--r-- 1 deploy deploy 2203 Sep  2 10:14 deploy.sh
+deploy@web01:/opt/app$ ./deploy.sh production
+-bash: ./deploy.sh: Permission denied
+deploy@web01:/opt/app$ 

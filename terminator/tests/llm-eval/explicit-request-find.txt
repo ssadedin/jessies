@@ -1,0 +1,9 @@
+expect-scenario: explicit-request
+expect-command: yes
+expect-insertable: yes
+expect-mentions: find, fd
+title: simon@hpc-login1: /data/projects
+---
+simon@hpc-login1:/data/projects$ ls
+cohort2024  cohort2025  scratch  shared_refs
+simon@hpc-login1:/data/projects$ # find files over 100M changed in the last week under here

@@ -1,0 +1,17 @@
+expect-scenario: command-error
+expect-mentions: pull, rebase, fetch
+title: simon@zenith: ~/work/pipeline
+---
+simon@zenith:~/work/pipeline$ git commit -am "Fix sample sheet parsing"
+[main 3f2c1a9] Fix sample sheet parsing
+ 2 files changed, 14 insertions(+), 3 deletions(-)
+simon@zenith:~/work/pipeline$ git push
+To github.com:example/pipeline.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'github.com:example/pipeline.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+simon@zenith:~/work/pipeline$ 

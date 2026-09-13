@@ -1,0 +1,11 @@
+expect-scenario: explicit-request
+expect-command: yes
+expect-insertable: yes
+expect-mentions: Get-Service
+title: Windows PowerShell
+---
+PS C:\Users\simon> Get-Date
+
+Saturday, 12 September 2026 9:41:07 AM
+
+PS C:\Users\simon> ' list the services that are set to start automatically but are stopped

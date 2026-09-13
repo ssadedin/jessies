@@ -1,0 +1,16 @@
+expect-scenario: explicit-request
+expect-command: yes
+expect-insertable: yes
+expect-mentions: pg_total_relation_size, pg_relation_size, pg_size_pretty
+title: psql tracker
+---
+tracker=> \dt
+             List of relations
+ Schema |      Name      | Type  |  Owner
+--------+----------------+-------+---------
+ public | batches        | table | tracker
+ public | sample_events  | table | tracker
+ public | samples        | table | tracker
+(3 rows)
+
+tracker=> -- the five biggest tables by total size

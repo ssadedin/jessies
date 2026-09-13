@@ -1,0 +1,11 @@
+expect-scenario: command-error
+expect-mentions: pandas
+title: simon@hpc-login1: ~/analysis
+---
+(base) simon@hpc-login1:~/analysis$ conda activate qc
+(qc) simon@hpc-login1:~/analysis$ python summarise_coverage.py --input coverage/ --out summary.tsv
+Traceback (most recent call last):
+  File "/home/simon/analysis/summarise_coverage.py", line 4, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+(qc) simon@hpc-login1:~/analysis$ 

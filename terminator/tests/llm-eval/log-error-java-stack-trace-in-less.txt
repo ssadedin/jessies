@@ -1,0 +1,18 @@
+expect-scenario: log-error
+expect-command: no
+expect-mentions: NullPointerException, null
+alternate-buffer: true
+title: less /var/log/sampletracker/app.log
+---
+2026-09-12 14:02:11.482 INFO  [http-nio-8080-exec-3] c.e.s.web.SampleController : GET /api/samples/S1234
+2026-09-12 14:02:11.497 INFO  [http-nio-8080-exec-3] c.e.s.service.SampleService : Loading sample S1234
+2026-09-12 14:02:11.512 ERROR [http-nio-8080-exec-3] o.a.c.c.C.[.[.[/].[dispatcherServlet] : Servlet.service() threw exception
+java.lang.NullPointerException: Cannot invoke "com.example.sampletracker.model.Batch.getId()" because the return value of "com.example.sampletracker.model.Sample.getBatch()" is null
+        at com.example.sampletracker.service.SampleService.toDto(SampleService.java:87)
+        at com.example.sampletracker.service.SampleService.findById(SampleService.java:52)
+        at com.example.sampletracker.web.SampleController.get(SampleController.java:31)
+        at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+        at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)
+2026-09-12 14:02:13.020 INFO  [http-nio-8080-exec-4] c.e.s.web.SampleController : GET /api/samples/S1235
+2026-09-12 14:02:13.031 INFO  [http-nio-8080-exec-4] c.e.s.service.SampleService : Loading sample S1235
+/var/log/sampletracker/app.log lines 1-12/12 (END)
